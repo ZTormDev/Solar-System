@@ -1,6 +1,7 @@
 #pragma once
 
 #include "scene/Camera.hpp"
+#include "scene/CelestialBody.hpp"
 #include "scene/GameObject.hpp"
 #include "scene/Player.hpp"
 
@@ -24,20 +25,38 @@ public:
 
     void update(GLFWwindow* window, float timeSeconds, float deltaTimeSeconds);
 
-    const std::vector<Vertex>& activeVertices() const;
-    const std::vector<uint16_t>& activeIndices() const;
-    uint32_t activeIndexCount() const;
-    glm::mat4 activeModelMatrix() const;
+    const std::vector<Vertex>& meshVertices() const;
+    const std::vector<uint16_t>& meshIndices() const;
+    uint32_t meshIndexCount() const;
+
+    const std::vector<GameObject>& renderables() const;
+    glm::mat4 modelMatrixFor(const GameObject& object) const;
+
     glm::mat4 viewMatrix() const;
     glm::mat4 projectionMatrix(float aspectRatio) const;
 
+    float timeScale() const;
+    void setTimeScale(float value);
+    bool isPaused() const;
+    void setPaused(bool value);
+    double simulationDays() const;
+
+    const std::vector<CelestialBody>& celestialBodies() const;
+
 private:
-    const GameObject& activeRenderable() const;
-    GameObject& activeRenderable();
+    void initializeSolarMvpBodies();
+    void simulateBodies();
+    static double wrapDegrees(double angleDegrees);
 
     float elapsedSeconds = 0.0f;
-    float defaultRotationSpeedDegrees = 45.0f;
-    glm::vec3 defaultRotationAxis = {0.3f, 1.0f, 0.0f};
+    double elapsedSimulationDays = 0.0;
+    float simulationTimeScale = 6000.0f;
+    bool paused = false;
+
+    static constexpr double REAL_SECONDS_PER_DAY = 86400.0;
+    static constexpr double KM_TO_WORLD_UNITS = 1.0 / 1000000.0;
+
+    std::vector<CelestialBody> bodies;
 
     Player player;
     std::vector<GameObject> objects;

@@ -656,6 +656,13 @@ void VulkanApp::createGraphicsPipeline() {
     pipelineLayoutInfo.setLayoutCount = 1;
     pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
 
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(glm::mat4);
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
+
     if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create pipeline layout.");
     }
@@ -740,7 +747,7 @@ void VulkanApp::createDepthResources() {
 }
 
 void VulkanApp::createVertexBuffer() {
-    const auto& vertices = scene.activeVertices();
+    const auto& vertices = scene.meshVertices();
     VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
     VkBuffer stagingBuffer;
@@ -773,7 +780,7 @@ void VulkanApp::createVertexBuffer() {
 }
 
 void VulkanApp::createIndexBuffer() {
-    const auto& indices = scene.activeIndices();
+    const auto& indices = scene.meshIndices();
     VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
     VkBuffer stagingBuffer;
@@ -927,7 +934,22 @@ void VulkanApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
         nullptr
     );
 
-    vkCmdDrawIndexed(commandBuffer, scene.activeIndexCount(), 1, 0, 0, 0);
+    for (const auto& object : scene.renderables()) {
+        if (!object.isActive || !object.mesh.isValid()) {
+            continue;
+        }
+
+        glm::mat4 model = scene.modelMatrixFor(object);
+        vkCmdPushConstants(
+            commandBuffer,
+            pipelineLayout,
+            VK_SHADER_STAGE_VERTEX_BIT,
+            0,
+            sizeof(glm::mat4),
+            &model
+        );
+        vkCmdDrawIndexed(commandBuffer, scene.meshIndexCount(), 1, 0, 0, 0);
+    }
 
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
 
@@ -993,16 +1015,44 @@ void VulkanApp::drawFrame() {
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
 
+    ImGuiIO& io = ImGui::GetIO();
+    scene.mainPlayer().adjustMoveSpeedFromMouseWheel(io.MouseWheel, io.WantCaptureMouse);
+
     const glm::dvec3& playerPosition = scene.mainPlayer().worldPosition();
+    ImGui::SetNextWindowSize(ImVec2(440.0f, 360.0f), ImGuiCond_FirstUseEver);
     ImGui::Begin("Player Coordinates");
     ImGui::Text("World Position (double)");
     ImGui::Separator();
     ImGui::Text("X: %.6f", playerPosition.x);
     ImGui::Text("Y: %.6f", playerPosition.y);
     ImGui::Text("Z: %.6f", playerPosition.z);
+    ImGui::Text("Speed: %.2f u/s", scene.mainPlayer().moveSpeedUnitsPerSecondValue());
     ImGui::Separator();
     ImGui::Text("Controls: WASD + Q/E + Shift");
     ImGui::Text("ESC toggles mouse capture");
+    float sprintMultiplier = scene.mainPlayer().sprintMultiplierValue();
+    if (ImGui::SliderFloat("Sprint Multiplier", &sprintMultiplier, 1.0f, 10.0f, "x%.2f")) {
+        scene.mainPlayer().setSprintMultiplier(sprintMultiplier);
+    }
+
+    ImGui::Separator();
+    float timeScale = scene.timeScale();
+    if (ImGui::SliderFloat("Time Scale", &timeScale, 0.0f, 500000.0f, "%.0fx")) {
+        scene.setTimeScale(timeScale);
+    }
+
+    bool paused = scene.isPaused();
+    if (ImGui::Checkbox("Paused", &paused)) {
+        scene.setPaused(paused);
+    }
+
+    ImGui::Text("Simulation Days: %.3f", scene.simulationDays());
+
+    ImGui::Separator();
+    ImGui::Text("Bodies");
+    for (const auto& body : scene.celestialBodies()) {
+        ImGui::BulletText("%s | orbit %.0f km | period %.2f days", body.name.c_str(), body.orbitRadiusKm, body.orbitPeriodDays);
+    }
     ImGui::End();
 
     ImGui::Render();
@@ -1067,7 +1117,6 @@ void VulkanApp::updateUniformBuffer(uint32_t currentImage) {
     scene.update(window, time, deltaTime);
 
     UniformBufferObject ubo{};
-    ubo.model = scene.activeModelMatrix();
     ubo.view = scene.viewMatrix();
     ubo.proj = scene.projectionMatrix(
         static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height)
@@ -1110,7 +1159,7 @@ void VulkanApp::initImGui() {
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
-    ImGui_ImplGlfw_InitForVulkan(window, false);
+    ImGui_ImplGlfw_InitForVulkan(window, true);
 
     QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
 

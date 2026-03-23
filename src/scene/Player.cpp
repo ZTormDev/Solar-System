@@ -1,9 +1,12 @@
 #include "Player.hpp"
 
+#include <imgui.h>
+
 #include <glm/gtc/constants.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <algorithm>
+#include <cmath>
 
 Player::Player() {
     playerCamera.position = {0.0f, 0.0f, 0.0f};
@@ -22,7 +25,7 @@ void Player::updateFromInput(GLFWwindow* window, float deltaTimeSeconds) {
 
     float speedMultiplier = 1.0f;
     if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
-        speedMultiplier = 2.5f;
+        speedMultiplier = sprintMultiplier;
     }
 
     const float velocity = moveSpeedUnitsPerSecond * speedMultiplier * deltaTimeSeconds;
@@ -48,6 +51,16 @@ void Player::updateFromInput(GLFWwindow* window, float deltaTimeSeconds) {
 
     const bool isFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) == GLFW_TRUE;
     if (!isFocused) {
+        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        firstMouseSample = true;
+        playerCamera.position = {0.0f, 0.0f, 0.0f};
+        playerCamera.target = front;
+        playerCamera.worldPosition = playerWorldPosition;
+        return;
+    }
+
+    const bool imguiWantsMouse = ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse;
+    if (imguiWantsMouse) {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
         firstMouseSample = true;
         playerCamera.position = {0.0f, 0.0f, 0.0f};
@@ -91,6 +104,34 @@ void Player::updateFromInput(GLFWwindow* window, float deltaTimeSeconds) {
     playerCamera.position = {0.0f, 0.0f, 0.0f};
     playerCamera.target = front;
     playerCamera.worldPosition = playerWorldPosition;
+}
+
+void Player::adjustMoveSpeedFromMouseWheel(float mouseWheelDelta, bool uiCapturingMouse) {
+    if (uiCapturingMouse || mouseWheelDelta == 0.0f) {
+        return;
+    }
+
+    constexpr float minMoveSpeed = 0.25f;
+    constexpr float maxMoveSpeed = 80.0f;
+    constexpr float speedExponentialBasePerWheelTick = 1.24f;
+
+    moveSpeedUnitsPerSecond = std::clamp(
+        moveSpeedUnitsPerSecond * std::pow(speedExponentialBasePerWheelTick, mouseWheelDelta),
+        minMoveSpeed,
+        maxMoveSpeed
+    );
+}
+
+float Player::moveSpeedUnitsPerSecondValue() const {
+    return moveSpeedUnitsPerSecond;
+}
+
+void Player::setSprintMultiplier(float value) {
+    sprintMultiplier = std::clamp(value, 1.0f, 10.0f);
+}
+
+float Player::sprintMultiplierValue() const {
+    return sprintMultiplier;
 }
 
 Camera& Player::camera() {

@@ -10,6 +10,10 @@ public:
     Player();
 
     void updateFromInput(GLFWwindow* window, float deltaTimeSeconds);
+    void adjustMoveSpeedFromMouseWheel(float mouseWheelDelta, bool uiCapturingMouse);
+    float moveSpeedUnitsPerSecondValue() const;
+    void setSprintMultiplier(float value);
+    float sprintMultiplierValue() const;
 
     Camera& camera();
     const Camera& camera() const;
@@ -30,6 +34,7 @@ private:
     float pitchDegrees = 0.0f;
 
     float moveSpeedUnitsPerSecond = 2.7f;
+    float sprintMultiplier = 2.5f;
     float lookSensitivity = 0.12f;
 
     bool mouseCaptured = true;
