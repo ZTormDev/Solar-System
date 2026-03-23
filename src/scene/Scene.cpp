@@ -7,17 +7,21 @@
 #include <cmath>
 
 namespace {
-constexpr std::array<std::pair<uint32_t, uint32_t>, 3> kSphereLods = {
-    std::pair<uint32_t, uint32_t>{56u, 112u},
-    std::pair<uint32_t, uint32_t>{28u, 56u},
-    std::pair<uint32_t, uint32_t>{12u, 24u}
+constexpr std::array<std::pair<uint32_t, uint32_t>, 5> kSphereLods = {
+    std::pair<uint32_t, uint32_t>{128u, 256u},
+    std::pair<uint32_t, uint32_t>{96u, 192u},
+    std::pair<uint32_t, uint32_t>{72u, 144u},
+    std::pair<uint32_t, uint32_t>{48u, 96u},
+    std::pair<uint32_t, uint32_t>{32u, 64u}
 };
 }
 
 Scene::Scene() {
     buildLodSphereMeshes();
     initializeSolarMvpBodies();
-    simulateBodies();
+    initializeNBodyState();
+    syncObjectsFromPhysics();
+    updateBodyRotations();
 }
 
 GameObject& Scene::createGameObject(const std::string& name) {
@@ -57,10 +61,22 @@ void Scene::update(GLFWwindow* window, float timeSeconds, float deltaTimeSeconds
     }
 
     if (!paused) {
-        elapsedSimulationDays += (static_cast<double>(deltaTimeSeconds) * static_cast<double>(simulationTimeScale)) / REAL_SECONDS_PER_DAY;
+        const double simulatedSeconds = static_cast<double>(deltaTimeSeconds) * static_cast<double>(simulationTimeScale);
+        const uint32_t substepCount = static_cast<uint32_t>(std::max(
+            1.0,
+            std::ceil(simulatedSeconds / MAX_PHYSICS_SUBSTEP_SECONDS)
+        ));
+        const double substepSeconds = simulatedSeconds / static_cast<double>(substepCount);
+
+        for (uint32_t substepIndex = 0; substepIndex < substepCount; ++substepIndex) {
+            stepNBody(substepSeconds);
+        }
+
+        elapsedSimulationDays += simulatedSeconds / REAL_SECONDS_PER_DAY;
     }
 
-    simulateBodies();
+    syncObjectsFromPhysics();
+    updateBodyRotations();
 }
 
 const std::vector<Vertex>& Scene::meshVertices() const {
@@ -133,15 +149,12 @@ void Scene::buildLodSphereMeshes() {
 
         sceneMeshVertices.insert(sceneMeshVertices.end(), lodMesh.vertices.begin(), lodMesh.vertices.end());
 
-        for (uint16_t index : lodMesh.indices) {
-            const uint32_t combinedIndex = static_cast<uint32_t>(index) + static_cast<uint32_t>(vertexOffset);
-            sceneMeshIndices.push_back(static_cast<uint16_t>(combinedIndex));
-        }
+        sceneMeshIndices.insert(sceneMeshIndices.end(), lodMesh.indices.begin(), lodMesh.indices.end());
 
         lodMeshSlices.push_back(MeshSlice{
             .firstIndex = firstIndex,
             .indexCount = indexCount,
-            .vertexOffset = 0
+            .vertexOffset = vertexOffset
         });
     }
 }
@@ -153,76 +166,143 @@ void Scene::initializeSolarMvpBodies() {
     auto addBody = [this](const CelestialBody& bodyTemplate) {
         GameObject& object = createGameObject(bodyTemplate.name);
         object.meshSliceIndex = 1;
-        object.transform.scale = glm::vec3(bodyTemplate.visualScale);
+        object.transform.scale = glm::vec3(static_cast<float>(bodyTemplate.radiusKm * METERS_PER_KILOMETER));
+
+        if (bodyTemplate.name == "Sun") {
+            object.colorTint = glm::vec3(1.8f, 1.35f, 0.6f);
+        } else if (bodyTemplate.name == "Earth") {
+            object.colorTint = glm::vec3(0.35f, 0.65f, 1.2f);
+        } else if (bodyTemplate.name == "Moon") {
+            object.colorTint = glm::vec3(0.95f, 0.95f, 1.05f);
+        }
+
         bodies.push_back(bodyTemplate);
     };
 
     addBody(CelestialBody{
         .name = "Sun",
         .radiusKm = 696340.0,
+        .massKg = 1.98847e30,
         .orbitRadiusKm = 0.0,
         .orbitPeriodDays = 0.0,
         .rotationPeriodHours = 609.12,
         .orbitPhaseDegrees = 0.0,
-        .visualScale = 2.4f,
         .parentBodyIndex = std::nullopt
     });
 
     addBody(CelestialBody{
         .name = "Earth",
         .radiusKm = 6371.0,
+        .massKg = 5.97219e24,
         .orbitRadiusKm = 149597870.7,
         .orbitPeriodDays = 365.256,
         .rotationPeriodHours = 23.9345,
         .orbitPhaseDegrees = 20.0,
-        .visualScale = 0.9f,
         .parentBodyIndex = 0
     });
 
     addBody(CelestialBody{
         .name = "Moon",
         .radiusKm = 1737.4,
+        .massKg = 7.342e22,
         .orbitRadiusKm = 384400.0,
         .orbitPeriodDays = 27.321661,
         .rotationPeriodHours = 655.72,
         .orbitPhaseDegrees = 35.0,
-        .visualScale = 0.35f,
         .parentBodyIndex = 1
     });
 }
 
-void Scene::simulateBodies() {
-    const double tau = 6.28318530717958647692;
+void Scene::initializeNBodyState() {
+    bodyPositionsKm.assign(bodies.size(), glm::dvec3(0.0));
+    bodyVelocitiesKmPerSec.assign(bodies.size(), glm::dvec3(0.0));
 
     for (std::size_t index = 0; index < bodies.size(); ++index) {
         const CelestialBody& body = bodies[index];
-        GameObject& object = objects[index];
 
-        glm::dvec3 parentPositionUnits = {0.0, 0.0, 0.0};
-        if (body.parentBodyIndex.has_value()) {
-            parentPositionUnits = objects[body.parentBodyIndex.value()].transform.worldPosition;
+        if (body.name == "Sun") {
+            bodyPositionsKm[index] = glm::dvec3(0.0, 0.0, 0.0);
+            bodyVelocitiesKmPerSec[index] = glm::dvec3(0.0, 0.0, 0.0);
+            continue;
         }
 
-        glm::dvec3 orbitOffsetUnits = {0.0, 0.0, 0.0};
-        if (body.orbitRadiusKm > 0.0 && body.orbitPeriodDays > 0.0) {
-            double orbitRadiusUnits = body.orbitRadiusKm * KM_TO_WORLD_UNITS;
-            if (body.parentBodyIndex.has_value()) {
-                const GameObject& parentObject = objects[body.parentBodyIndex.value()];
-                const double parentVisualRadius = static_cast<double>(parentObject.transform.scale.x);
-                const double bodyVisualRadius = static_cast<double>(body.visualScale);
-                const double minimumVisualOrbitRadius = (parentVisualRadius + bodyVisualRadius) * 2.4;
-                orbitRadiusUnits = std::max(orbitRadiusUnits, minimumVisualOrbitRadius);
+        if (body.name == "Earth") {
+            bodyPositionsKm[index] = glm::dvec3(147098290.0, 0.0, 0.0);
+            bodyVelocitiesKmPerSec[index] = glm::dvec3(0.0, 30.29, 0.0);
+            continue;
+        }
+
+        if (body.name == "Moon") {
+            const std::size_t earthIndex = 1;
+            bodyPositionsKm[index] = bodyPositionsKm[earthIndex] + glm::dvec3(384400.0, 0.0, 0.0);
+            bodyVelocitiesKmPerSec[index] = bodyVelocitiesKmPerSec[earthIndex] + glm::dvec3(0.0, 1.022, 0.0);
+            continue;
+        }
+    }
+}
+
+std::vector<glm::dvec3> Scene::computeAccelerations(const std::vector<glm::dvec3>& positionsKm) const {
+    std::vector<glm::dvec3> accelerations(bodies.size(), glm::dvec3(0.0));
+
+    for (std::size_t bodyIndex = 0; bodyIndex < bodies.size(); ++bodyIndex) {
+        for (std::size_t otherIndex = 0; otherIndex < bodies.size(); ++otherIndex) {
+            if (bodyIndex == otherIndex) {
+                continue;
             }
 
-            const double angle = glm::radians(body.orbitPhaseDegrees) + tau * (elapsedSimulationDays / body.orbitPeriodDays);
-            orbitOffsetUnits.x = std::cos(angle) * orbitRadiusUnits;
-            orbitOffsetUnits.y = std::sin(angle) * orbitRadiusUnits;
-        }
+            const glm::dvec3 displacementKm = positionsKm[otherIndex] - positionsKm[bodyIndex];
+            const double distanceSquaredKm = glm::dot(displacementKm, displacementKm);
+            if (distanceSquaredKm < 1.0) {
+                continue;
+            }
 
-        object.transform.worldPosition = parentPositionUnits + orbitOffsetUnits;
+            const double distanceKm = std::sqrt(distanceSquaredKm);
+            const glm::dvec3 direction = displacementKm / distanceKm;
+            const double accelerationMagnitude = (G_KM3_PER_KG_S2 * bodies[otherIndex].massKg) / distanceSquaredKm;
+            accelerations[bodyIndex] += direction * accelerationMagnitude;
+        }
+    }
+
+    return accelerations;
+}
+
+void Scene::stepNBody(double deltaTimeSeconds) {
+    if (bodyPositionsKm.empty() || bodyVelocitiesKmPerSec.empty()) {
+        return;
+    }
+
+    const std::vector<glm::dvec3> initialAccelerations = computeAccelerations(bodyPositionsKm);
+
+    std::vector<glm::dvec3> updatedPositions = bodyPositionsKm;
+    for (std::size_t index = 0; index < bodies.size(); ++index) {
+        updatedPositions[index] += bodyVelocitiesKmPerSec[index] * deltaTimeSeconds +
+                                   0.5 * initialAccelerations[index] * deltaTimeSeconds * deltaTimeSeconds;
+    }
+
+    const std::vector<glm::dvec3> updatedAccelerations = computeAccelerations(updatedPositions);
+
+    for (std::size_t index = 0; index < bodies.size(); ++index) {
+        bodyVelocitiesKmPerSec[index] += 0.5 * (initialAccelerations[index] + updatedAccelerations[index]) * deltaTimeSeconds;
+    }
+
+    bodyPositionsKm = std::move(updatedPositions);
+}
+
+void Scene::syncObjectsFromPhysics() {
+    for (std::size_t index = 0; index < bodies.size(); ++index) {
+        GameObject& object = objects[index];
+        object.transform.worldPosition = bodyPositionsKm[index] * METERS_PER_KILOMETER;
 
         const double distanceToCamera = glm::length(object.transform.worldPosition - player.worldPosition());
-        object.meshSliceIndex = lodForDistance(distanceToCamera);
+        const double bodyRadiusUnits = std::max(1.0, static_cast<double>(object.transform.scale.x));
+        object.meshSliceIndex = lodForDistance(distanceToCamera, bodyRadiusUnits);
+    }
+}
+
+void Scene::updateBodyRotations() {
+    for (std::size_t index = 0; index < bodies.size(); ++index) {
+        const CelestialBody& body = bodies[index];
+        GameObject& object = objects[index];
 
         if (body.rotationPeriodHours > 0.0) {
             const double rotationDegrees = wrapDegrees((elapsedSimulationDays * 24.0 / body.rotationPeriodHours) * 360.0);
@@ -231,14 +311,22 @@ void Scene::simulateBodies() {
     }
 }
 
-uint32_t Scene::lodForDistance(double distanceToCameraUnits) const {
-    if (distanceToCameraUnits < 8.0) {
+uint32_t Scene::lodForDistance(double distanceToCameraUnits, double bodyRadiusUnits) const {
+    const double distanceToRadiusRatio = distanceToCameraUnits / std::max(bodyRadiusUnits, 1.0);
+
+    if (distanceToRadiusRatio < 5.0) {
         return 0;
     }
-    if (distanceToCameraUnits < 35.0) {
+    if (distanceToRadiusRatio < 10.0) {
         return 1;
     }
-    return 2;
+    if (distanceToRadiusRatio < 22.0) {
+        return 2;
+    }
+    if (distanceToRadiusRatio < 55.0) {
+        return 3;
+    }
+    return 4;
 }
 
 double Scene::wrapDegrees(double angleDegrees) {

@@ -24,7 +24,7 @@ private:
 
     Camera playerCamera;
 
-    glm::dvec3 playerWorldPosition = {2.2, 2.2, 2.2};
+    glm::dvec3 playerWorldPosition = {147105290000.0, 0.0, 0.0};
 
     glm::vec3 front = {0.0f, -1.0f, 0.0f};
     glm::vec3 right = {1.0f, 0.0f, 0.0f};

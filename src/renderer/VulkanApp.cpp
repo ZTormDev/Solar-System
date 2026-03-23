@@ -659,7 +659,7 @@ void VulkanApp::createGraphicsPipeline() {
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(glm::mat4);
+    pushConstantRange.size = sizeof(PushConstants);
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
@@ -940,14 +940,16 @@ void VulkanApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
         }
 
         const Scene::MeshSlice& meshSlice = scene.meshSliceFor(object);
-        glm::mat4 model = scene.modelMatrixFor(object);
+        PushConstants pushConstants{};
+        pushConstants.model = scene.modelMatrixFor(object);
+        pushConstants.tint = glm::vec4(object.colorTint, 1.0f);
         vkCmdPushConstants(
             commandBuffer,
             pipelineLayout,
             VK_SHADER_STAGE_VERTEX_BIT,
             0,
-            sizeof(glm::mat4),
-            &model
+            sizeof(PushConstants),
+            &pushConstants
         );
         vkCmdDrawIndexed(commandBuffer, meshSlice.indexCount, 1, meshSlice.firstIndex, meshSlice.vertexOffset, 0);
     }

@@ -54,8 +54,12 @@ public:
 private:
     void buildLodSphereMeshes();
     void initializeSolarMvpBodies();
-    void simulateBodies();
-    uint32_t lodForDistance(double distanceToCameraUnits) const;
+    void initializeNBodyState();
+    void stepNBody(double deltaTimeSeconds);
+    std::vector<glm::dvec3> computeAccelerations(const std::vector<glm::dvec3>& positionsKm) const;
+    void syncObjectsFromPhysics();
+    void updateBodyRotations();
+    uint32_t lodForDistance(double distanceToCameraUnits, double bodyRadiusUnits) const;
     static double wrapDegrees(double angleDegrees);
 
     float elapsedSeconds = 0.0f;
@@ -64,12 +68,16 @@ private:
     bool paused = false;
 
     static constexpr double REAL_SECONDS_PER_DAY = 86400.0;
-    static constexpr double KM_TO_WORLD_UNITS = 1.0 / 1000000.0;
+    static constexpr double METERS_PER_KILOMETER = 1000.0;
+    static constexpr double G_KM3_PER_KG_S2 = 6.67430e-20;
+    static constexpr double MAX_PHYSICS_SUBSTEP_SECONDS = 600.0;
 
     std::vector<CelestialBody> bodies;
     std::vector<MeshSlice> lodMeshSlices;
     std::vector<Vertex> sceneMeshVertices;
     std::vector<uint16_t> sceneMeshIndices;
+    std::vector<glm::dvec3> bodyPositionsKm;
+    std::vector<glm::dvec3> bodyVelocitiesKmPerSec;
 
     Player player;
     std::vector<GameObject> objects;

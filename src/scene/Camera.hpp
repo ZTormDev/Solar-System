@@ -11,8 +11,8 @@ public:
     glm::vec3 up = {0.0f, 0.0f, 1.0f};
 
     float fieldOfViewDegrees = 75.0f;
-    float nearPlane = 0.001f;
-    float farPlane = 1000.0f;
+    float nearPlane = 10.0f;
+    float farPlane = 300000000000.0f;
 
     glm::mat4 viewMatrix() const;
     glm::mat4 projectionMatrix(float aspectRatio) const;

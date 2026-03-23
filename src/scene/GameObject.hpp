@@ -25,5 +25,6 @@ public:
     bool isActive = true;
     Transform transform;
     uint32_t meshSliceIndex = 0;
+    glm::vec3 colorTint = glm::vec3(1.0f);
     MeshReference mesh;
 };

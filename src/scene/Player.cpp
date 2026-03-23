@@ -59,16 +59,6 @@ void Player::updateFromInput(GLFWwindow* window, float deltaTimeSeconds) {
         return;
     }
 
-    const bool imguiWantsMouse = ImGui::GetCurrentContext() != nullptr && ImGui::GetIO().WantCaptureMouse;
-    if (imguiWantsMouse) {
-        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-        firstMouseSample = true;
-        playerCamera.position = {0.0f, 0.0f, 0.0f};
-        playerCamera.target = front;
-        playerCamera.worldPosition = playerWorldPosition;
-        return;
-    }
-
     if (!mouseCaptured) {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
         firstMouseSample = true;
@@ -112,13 +102,12 @@ void Player::adjustMoveSpeedFromMouseWheel(float mouseWheelDelta, bool uiCapturi
     }
 
     constexpr float minMoveSpeed = 0.25f;
-    constexpr float maxMoveSpeed = 80.0f;
     constexpr float speedExponentialBasePerWheelTick = 1.24f;
 
-    moveSpeedUnitsPerSecond = std::clamp(
-        moveSpeedUnitsPerSecond * std::pow(speedExponentialBasePerWheelTick, mouseWheelDelta),
+    // no max move speed
+    moveSpeedUnitsPerSecond = std::max(
         minMoveSpeed,
-        maxMoveSpeed
+        moveSpeedUnitsPerSecond * std::pow(speedExponentialBasePerWheelTick, mouseWheelDelta)
     );
 }
 

@@ -26,6 +26,11 @@ private:
         glm::mat4 proj;
     };
 
+    struct PushConstants {
+        glm::mat4 model;
+        glm::vec4 tint;
+    };
+
     struct QueueFamilyIndices {
         std::optional<uint32_t> graphicsFamily;
         std::optional<uint32_t> presentFamily;

@@ -10,8 +10,8 @@ MeshData SphereMesh::createUvSphere(uint32_t latitudeSegments, uint32_t longitud
 
     const uint32_t vertexCount = (latitudeSegments + 1) * (longitudeSegments + 1);
     const uint32_t indexCount = latitudeSegments * longitudeSegments * 6;
-    if (vertexCount > 65535u || indexCount > 65535u) {
-        throw std::runtime_error("Sphere mesh exceeds 16-bit index limits.");
+    if (vertexCount > 65535u) {
+        throw std::runtime_error("Sphere mesh exceeds 16-bit index limits for a single LOD mesh.");
     }
 
     MeshData mesh;
