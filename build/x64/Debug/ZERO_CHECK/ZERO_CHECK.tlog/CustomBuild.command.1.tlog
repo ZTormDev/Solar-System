@@ -1,0 +1,10 @@
+^D:\SOLAR-SYSTEM\BUILD\CMAKEFILES\10D2B8F402396DFEB28A2770E8950439\GENERATE.STAMP.RULE
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SD:/Solar-System -BD:/Solar-System/build --check-stamp-list CMakeFiles/generate.stamp.list --vs-solution-file D:/Solar-System/build/SolarSystem.slnx
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

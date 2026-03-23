@@ -1,0 +1,13 @@
+{
+  "cmake.configureOnOpen": true,
+  "cmake.generator": "Visual Studio 18 2026",
+  "cmake.configureSettings": {
+    "CMAKE_GENERATOR_PLATFORM": "x64"
+  },
+  "cmake.buildDirectory": "${workspaceFolder}/build",
+  "cmake.configureArgs": [
+    "-DCMAKE_TOOLCHAIN_FILE=$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+  ],
+  "C_Cpp.default.cppStandard": "c++20",
+  "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools"
+}

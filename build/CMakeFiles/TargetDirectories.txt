@@ -1,0 +1,4 @@
+D:/Solar-System/build/CMakeFiles/SolarSystem.dir
+D:/Solar-System/build/CMakeFiles/Shaders.dir
+D:/Solar-System/build/CMakeFiles/ALL_BUILD.dir
+D:/Solar-System/build/CMakeFiles/ZERO_CHECK.dir

@@ -1,0 +1,38 @@
+^D:\SOLAR-SYSTEM\BUILD\CMAKEFILES\4B91D18831A090CB9DDCDA23D68EA899\CUBE.FRAG.SPV.RULE
+setlocal
+C:\VulkanSDK\1.4.341.1\Bin\glslc.exe D:/Solar-System/shaders/cube.frag -o D:/Solar-System/build/shaders/cube.frag.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^D:\SOLAR-SYSTEM\BUILD\CMAKEFILES\4B91D18831A090CB9DDCDA23D68EA899\CUBE.VERT.SPV.RULE
+setlocal
+C:\VulkanSDK\1.4.341.1\Bin\glslc.exe D:/Solar-System/shaders/cube.vert -o D:/Solar-System/build/shaders/cube.vert.spv
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^D:\SOLAR-SYSTEM\BUILD\CMAKEFILES\10D2B8F402396DFEB28A2770E8950439\SHADERS.RULE
+setlocal
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd
+^D:\SOLAR-SYSTEM\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SD:/Solar-System -BD:/Solar-System/build --check-stamp-file D:/Solar-System/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

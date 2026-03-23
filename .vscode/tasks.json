@@ -1,0 +1,41 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "configure-debug",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "-S",
+        ".",
+        "-B",
+        "build",
+        "-G",
+        "Visual Studio 18 2026",
+        "-A",
+        "x64",
+        "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+      ],
+      "group": "build"
+    },
+    {
+      "label": "build-debug",
+      "type": "shell",
+      "command": "cmake",
+      "args": [
+        "--build",
+        "build",
+        "--config",
+        "Debug"
+      ],
+      "dependsOn": "configure-debug",
+      "group": "build"
+    },
+    {
+      "label": "run-debug",
+      "type": "shell",
+      "command": "./build/Debug/SolarSystem.exe",
+      "dependsOn": "build-debug"
+    }
+  ]
+}
