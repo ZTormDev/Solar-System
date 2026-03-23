@@ -2,6 +2,10 @@
 
 #include "core/FileLoader.hpp"
 
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_vulkan.h>
+
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -49,6 +53,7 @@ void VulkanApp::initVulkan() {
     createDescriptorSets();
     createCommandBuffers();
     createSyncObjects();
+    initImGui();
 
     startTime = std::chrono::high_resolution_clock::now();
 }
@@ -63,6 +68,10 @@ void VulkanApp::mainLoop() {
 }
 
 void VulkanApp::cleanupSwapChain() {
+    if (imguiInitialized) {
+        cleanupImGui();
+    }
+
     vkDestroyImageView(device, depthImageView, nullptr);
     vkDestroyImage(device, depthImage, nullptr);
     vkFreeMemory(device, depthImageMemory, nullptr);
@@ -146,6 +155,7 @@ void VulkanApp::recreateSwapChain() {
     createDescriptorPool();
     createDescriptorSets();
     createCommandBuffers();
+    initImGui();
 
     imagesInFlight.assign(swapChainImages.size(), VK_NULL_HANDLE);
 }
@@ -919,6 +929,8 @@ void VulkanApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
 
     vkCmdDrawIndexed(commandBuffer, scene.activeIndexCount(), 1, 0, 0, 0);
 
+    ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);
+
     vkCmdEndRenderPass(commandBuffer);
 
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
@@ -976,6 +988,24 @@ void VulkanApp::drawFrame() {
     imagesInFlight[imageIndex] = inFlightFences[currentFrame];
 
     updateUniformBuffer(imageIndex);
+
+    ImGui_ImplVulkan_NewFrame();
+    ImGui_ImplGlfw_NewFrame();
+    ImGui::NewFrame();
+
+    const glm::dvec3& playerPosition = scene.mainPlayer().worldPosition();
+    ImGui::Begin("Player Coordinates");
+    ImGui::Text("World Position (double)");
+    ImGui::Separator();
+    ImGui::Text("X: %.6f", playerPosition.x);
+    ImGui::Text("Y: %.6f", playerPosition.y);
+    ImGui::Text("Z: %.6f", playerPosition.z);
+    ImGui::Separator();
+    ImGui::Text("Controls: WASD + Q/E + Shift");
+    ImGui::Text("ESC toggles mouse capture");
+    ImGui::End();
+
+    ImGui::Render();
 
     vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
@@ -1044,6 +1074,83 @@ void VulkanApp::updateUniformBuffer(uint32_t currentImage) {
     );
 
     std::memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
+}
+
+void VulkanApp::initImGui() {
+    if (imguiInitialized) {
+        return;
+    }
+
+    std::array<VkDescriptorPoolSize, 11> poolSizes = {
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLER, 1000},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1000},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE, 1000},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1000},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER, 1000},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER, 1000},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1000},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1000},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, 1000},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC, 1000},
+        VkDescriptorPoolSize{VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1000}
+    };
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+    poolInfo.maxSets = 1000 * static_cast<uint32_t>(poolSizes.size());
+    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
+
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &imguiDescriptorPool) != VK_SUCCESS) {
+        throw std::runtime_error("Failed to create ImGui descriptor pool.");
+    }
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGui::StyleColorsDark();
+
+    ImGui_ImplGlfw_InitForVulkan(window, false);
+
+    QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
+
+    ImGui_ImplVulkan_InitInfo initInfo{};
+    initInfo.ApiVersion = VK_API_VERSION_1_2;
+    initInfo.Instance = instance;
+    initInfo.PhysicalDevice = physicalDevice;
+    initInfo.Device = device;
+    initInfo.QueueFamily = queueFamilyIndices.graphicsFamily.value();
+    initInfo.Queue = graphicsQueue;
+    initInfo.PipelineCache = VK_NULL_HANDLE;
+    initInfo.DescriptorPool = imguiDescriptorPool;
+    initInfo.PipelineInfoMain.RenderPass = renderPass;
+    initInfo.PipelineInfoMain.Subpass = 0;
+    initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+    initInfo.MinImageCount = static_cast<uint32_t>(swapChainImages.size());
+    initInfo.ImageCount = static_cast<uint32_t>(swapChainImages.size());
+    initInfo.UseDynamicRendering = false;
+    initInfo.Allocator = nullptr;
+    initInfo.CheckVkResultFn = nullptr;
+    initInfo.MinAllocationSize = 1024 * 1024;
+
+    ImGui_ImplVulkan_Init(&initInfo);
+
+    imguiInitialized = true;
+}
+
+void VulkanApp::cleanupImGui() {
+    if (!imguiInitialized) {
+        return;
+    }
+
+    vkDeviceWaitIdle(device);
+    ImGui_ImplVulkan_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
+    vkDestroyDescriptorPool(device, imguiDescriptorPool, nullptr);
+    imguiDescriptorPool = VK_NULL_HANDLE;
+    imguiInitialized = false;
 }
 
 void VulkanApp::createBuffer(

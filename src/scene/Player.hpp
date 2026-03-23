@@ -13,11 +13,14 @@ public:
 
     Camera& camera();
     const Camera& camera() const;
+    const glm::dvec3& worldPosition() const;
 
 private:
     void updateCameraVectors();
 
     Camera playerCamera;
+
+    glm::dvec3 playerWorldPosition = {2.2, 2.2, 2.2};
 
     glm::vec3 front = {0.0f, -1.0f, 0.0f};
     glm::vec3 right = {1.0f, 0.0f, 0.0f};

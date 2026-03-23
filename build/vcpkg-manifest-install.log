@@ -3,8 +3,12 @@ Compiler found: C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/M
 The following packages are already installed:
     glfw3:x64-windows@3.4#1
     glm:x64-windows@1.0.3
+    imgui[core,vulkan-binding,glfw-binding]:x64-windows@1.92.6
   * vcpkg-cmake:x64-windows@2024-04-23
   * vcpkg-cmake-config:x64-windows@2024-05-23
+  * vulkan:x64-windows@2023-12-17
+  * vulkan-headers:x64-windows@1.4.341.0
+  * vulkan-loader:x64-windows@1.4.341.0
 glfw3 provides CMake targets:
 
   # this is heuristically generated, and may not be correct
@@ -25,4 +29,10 @@ The package glm provides CMake targets:
     find_package(glm CONFIG REQUIRED)
     target_link_libraries(main PRIVATE glm::glm-header-only)
 
-All requested installations completed successfully in: 428 us
+imgui provides CMake targets:
+
+  # this is heuristically generated, and may not be correct
+  find_package(imgui CONFIG REQUIRED)
+  target_link_libraries(main PRIVATE imgui::imgui)
+
+All requested installations completed successfully in: 502 us

@@ -85,7 +85,7 @@ uint32_t Scene::activeIndexCount() const {
 }
 
 glm::mat4 Scene::activeModelMatrix() const {
-    return activeRenderable().transform.modelMatrix();
+    return activeRenderable().transform.modelMatrix(player.worldPosition());
 }
 
 glm::mat4 Scene::viewMatrix() const {

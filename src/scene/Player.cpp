@@ -6,7 +6,8 @@
 #include <algorithm>
 
 Player::Player() {
-    playerCamera.position = {2.2f, 2.2f, 2.2f};
+    playerCamera.position = {0.0f, 0.0f, 0.0f};
+    playerCamera.worldPosition = playerWorldPosition;
     playerCamera.up = worldUp;
     updateCameraVectors();
 }
@@ -27,36 +28,40 @@ void Player::updateFromInput(GLFWwindow* window, float deltaTimeSeconds) {
     const float velocity = moveSpeedUnitsPerSecond * speedMultiplier * deltaTimeSeconds;
 
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-        playerCamera.position += front * velocity;
+        playerWorldPosition += glm::dvec3(front) * static_cast<double>(velocity);
     }
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-        playerCamera.position -= front * velocity;
+        playerWorldPosition -= glm::dvec3(front) * static_cast<double>(velocity);
     }
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-        playerCamera.position -= right * velocity;
+        playerWorldPosition -= glm::dvec3(right) * static_cast<double>(velocity);
     }
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-        playerCamera.position += right * velocity;
+        playerWorldPosition += glm::dvec3(right) * static_cast<double>(velocity);
     }
     if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
-        playerCamera.position += worldUp * velocity;
+        playerWorldPosition += glm::dvec3(worldUp) * static_cast<double>(velocity);
     }
     if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
-        playerCamera.position -= worldUp * velocity;
+        playerWorldPosition -= glm::dvec3(worldUp) * static_cast<double>(velocity);
     }
 
     const bool isFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) == GLFW_TRUE;
     if (!isFocused) {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
         firstMouseSample = true;
-        playerCamera.target = playerCamera.position + front;
+        playerCamera.position = {0.0f, 0.0f, 0.0f};
+        playerCamera.target = front;
+        playerCamera.worldPosition = playerWorldPosition;
         return;
     }
 
     if (!mouseCaptured) {
         glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
         firstMouseSample = true;
-        playerCamera.target = playerCamera.position + front;
+        playerCamera.position = {0.0f, 0.0f, 0.0f};
+        playerCamera.target = front;
+        playerCamera.worldPosition = playerWorldPosition;
         return;
     }
 
@@ -83,7 +88,9 @@ void Player::updateFromInput(GLFWwindow* window, float deltaTimeSeconds) {
 
     updateCameraVectors();
 
-    playerCamera.target = playerCamera.position + front;
+    playerCamera.position = {0.0f, 0.0f, 0.0f};
+    playerCamera.target = front;
+    playerCamera.worldPosition = playerWorldPosition;
 }
 
 Camera& Player::camera() {
@@ -92,6 +99,10 @@ Camera& Player::camera() {
 
 const Camera& Player::camera() const {
     return playerCamera;
+}
+
+const glm::dvec3& Player::worldPosition() const {
+    return playerWorldPosition;
 }
 
 void Player::updateCameraVectors() {
@@ -106,5 +117,7 @@ void Player::updateCameraVectors() {
     front = glm::normalize(direction);
     right = glm::normalize(glm::cross(front, worldUp));
     playerCamera.up = glm::normalize(glm::cross(right, front));
-    playerCamera.target = playerCamera.position + front;
+    playerCamera.position = {0.0f, 0.0f, 0.0f};
+    playerCamera.target = front;
+    playerCamera.worldPosition = playerWorldPosition;
 }

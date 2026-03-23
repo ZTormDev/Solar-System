@@ -67,6 +67,8 @@ private:
     void createDescriptorSets();
     void createCommandBuffers();
     void createSyncObjects();
+    void initImGui();
+    void cleanupImGui();
 
     void recreateSwapChain();
     void cleanupSwapChain();
@@ -218,6 +220,9 @@ private:
     std::vector<VkFence> inFlightFences;
     std::vector<VkFence> imagesInFlight;
     size_t currentFrame = 0;
+
+    VkDescriptorPool imguiDescriptorPool = VK_NULL_HANDLE;
+    bool imguiInitialized = false;
 
     Scene scene;
 
