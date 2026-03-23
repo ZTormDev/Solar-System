@@ -14,6 +14,7 @@ add_executable(SolarSystem
     src/core/FileLoader.cpp
     src/scene/CubeMesh.cpp
     src/scene/Camera.cpp
+    src/scene/Player.cpp
     src/scene/Scene.cpp
     src/scene/Transform.cpp
     src/renderer/Vertex.cpp

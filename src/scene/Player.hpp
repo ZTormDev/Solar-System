@@ -1,0 +1,38 @@
+#pragma once
+
+#include "scene/Camera.hpp"
+
+#include <GLFW/glfw3.h>
+#include <glm/glm.hpp>
+
+class Player {
+public:
+    Player();
+
+    void updateFromInput(GLFWwindow* window, float deltaTimeSeconds);
+
+    Camera& camera();
+    const Camera& camera() const;
+
+private:
+    void updateCameraVectors();
+
+    Camera playerCamera;
+
+    glm::vec3 front = {0.0f, -1.0f, 0.0f};
+    glm::vec3 right = {1.0f, 0.0f, 0.0f};
+    glm::vec3 worldUp = {0.0f, 0.0f, 1.0f};
+
+    float yawDegrees = -90.0f;
+    float pitchDegrees = 0.0f;
+
+    float moveSpeedUnitsPerSecond = 2.7f;
+    float lookSensitivity = 0.12f;
+
+    bool mouseCaptured = true;
+    bool escWasPressed = false;
+
+    bool firstMouseSample = true;
+    double lastMouseX = 0.0;
+    double lastMouseY = 0.0;
+};

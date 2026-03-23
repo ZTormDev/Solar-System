@@ -2,6 +2,7 @@
 
 #include "scene/Camera.hpp"
 #include "scene/GameObject.hpp"
+#include "scene/Player.hpp"
 
 #include <cstdint>
 #include <string>
@@ -15,10 +16,13 @@ public:
     std::vector<GameObject>& gameObjects();
     const std::vector<GameObject>& gameObjects() const;
 
+    Player& mainPlayer();
+    const Player& mainPlayer() const;
+
     Camera& mainCamera();
     const Camera& mainCamera() const;
 
-    void update(float timeSeconds);
+    void update(GLFWwindow* window, float timeSeconds, float deltaTimeSeconds);
 
     const std::vector<Vertex>& activeVertices() const;
     const std::vector<uint16_t>& activeIndices() const;
@@ -35,6 +39,6 @@ private:
     float defaultRotationSpeedDegrees = 45.0f;
     glm::vec3 defaultRotationAxis = {0.3f, 1.0f, 0.0f};
 
-    Camera camera;
+    Player player;
     std::vector<GameObject> objects;
 };

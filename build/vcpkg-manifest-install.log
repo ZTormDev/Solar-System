@@ -1,5 +1,3 @@
-waiting to take filesystem lock on C:\vcpkg\.vcpkg-root...
-waiting to take filesystem lock on C:\vcpkg\.vcpkg-root...
 Detecting compiler hash for triplet x64-windows...
 Compiler found: C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.50.35717/bin/Hostx64/x64/cl.exe
 The following packages are already installed:
@@ -27,4 +25,4 @@ The package glm provides CMake targets:
     find_package(glm CONFIG REQUIRED)
     target_link_libraries(main PRIVATE glm::glm-header-only)
 
-All requested installations completed successfully in: 497 us
+All requested installations completed successfully in: 338 us

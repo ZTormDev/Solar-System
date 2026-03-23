@@ -24,15 +24,27 @@ const std::vector<GameObject>& Scene::gameObjects() const {
 }
 
 Camera& Scene::mainCamera() {
-    return camera;
+    return player.camera();
 }
 
 const Camera& Scene::mainCamera() const {
-    return camera;
+    return player.camera();
 }
 
-void Scene::update(float timeSeconds) {
+Player& Scene::mainPlayer() {
+    return player;
+}
+
+const Player& Scene::mainPlayer() const {
+    return player;
+}
+
+void Scene::update(GLFWwindow* window, float timeSeconds, float deltaTimeSeconds) {
     elapsedSeconds = timeSeconds;
+
+    if (window != nullptr) {
+        player.updateFromInput(window, deltaTimeSeconds);
+    }
 
     if (!objects.empty()) {
         GameObject& cube = objects[0];
@@ -77,9 +89,9 @@ glm::mat4 Scene::activeModelMatrix() const {
 }
 
 glm::mat4 Scene::viewMatrix() const {
-    return camera.viewMatrix();
+    return player.camera().viewMatrix();
 }
 
 glm::mat4 Scene::projectionMatrix(float aspectRatio) const {
-    return camera.projectionMatrix(aspectRatio);
+    return player.camera().projectionMatrix(aspectRatio);
 }

@@ -1028,7 +1028,13 @@ void VulkanApp::drawFrame() {
 void VulkanApp::updateUniformBuffer(uint32_t currentImage) {
     auto now = std::chrono::high_resolution_clock::now();
     float time = std::chrono::duration<float, std::chrono::seconds::period>(now - startTime).count();
-    scene.update(time);
+    float deltaTime = time - previousFrameTimeSeconds;
+    if (deltaTime < 0.0f) {
+        deltaTime = 0.0f;
+    }
+    previousFrameTimeSeconds = time;
+
+    scene.update(window, time, deltaTime);
 
     UniformBufferObject ubo{};
     ubo.model = scene.activeModelMatrix();

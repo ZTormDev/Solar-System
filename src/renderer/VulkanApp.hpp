@@ -222,4 +222,5 @@ private:
     Scene scene;
 
     std::chrono::high_resolution_clock::time_point startTime;
+    float previousFrameTimeSeconds = 0.0f;
 };
