@@ -428,6 +428,7 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
     <ClCompile Include="D:\Solar-System\src\main.cpp" />
     <ClCompile Include="D:\Solar-System\src\core\FileLoader.cpp" />
     <ClCompile Include="D:\Solar-System\src\scene\CubeMesh.cpp" />
+    <ClCompile Include="D:\Solar-System\src\scene\SphereMesh.cpp" />
     <ClCompile Include="D:\Solar-System\src\scene\Camera.cpp" />
     <ClCompile Include="D:\Solar-System\src\scene\Player.cpp" />
     <ClCompile Include="D:\Solar-System\src\scene\Scene.cpp" />

@@ -10,6 +10,9 @@
     <ClCompile Include="D:\Solar-System\src\scene\CubeMesh.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="D:\Solar-System\src\scene\SphereMesh.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="D:\Solar-System\src\scene\Camera.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

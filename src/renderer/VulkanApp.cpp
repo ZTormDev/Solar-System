@@ -935,10 +935,11 @@ void VulkanApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
     );
 
     for (const auto& object : scene.renderables()) {
-        if (!object.isActive || !object.mesh.isValid()) {
+        if (!object.isActive) {
             continue;
         }
 
+        const Scene::MeshSlice& meshSlice = scene.meshSliceFor(object);
         glm::mat4 model = scene.modelMatrixFor(object);
         vkCmdPushConstants(
             commandBuffer,
@@ -948,7 +949,7 @@ void VulkanApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
             sizeof(glm::mat4),
             &model
         );
-        vkCmdDrawIndexed(commandBuffer, scene.meshIndexCount(), 1, 0, 0, 0);
+        vkCmdDrawIndexed(commandBuffer, meshSlice.indexCount, 1, meshSlice.firstIndex, meshSlice.vertexOffset, 0);
     }
 
     ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffer);

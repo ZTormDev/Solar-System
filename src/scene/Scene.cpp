@@ -1,11 +1,21 @@
 #include "Scene.hpp"
 
-#include "scene/CubeMesh.hpp"
+#include "scene/SphereMesh.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
+namespace {
+constexpr std::array<std::pair<uint32_t, uint32_t>, 3> kSphereLods = {
+    std::pair<uint32_t, uint32_t>{56u, 112u},
+    std::pair<uint32_t, uint32_t>{28u, 56u},
+    std::pair<uint32_t, uint32_t>{12u, 24u}
+};
+}
+
 Scene::Scene() {
+    buildLodSphereMeshes();
     initializeSolarMvpBodies();
     simulateBodies();
 }
@@ -54,15 +64,19 @@ void Scene::update(GLFWwindow* window, float timeSeconds, float deltaTimeSeconds
 }
 
 const std::vector<Vertex>& Scene::meshVertices() const {
-    return CubeMesh::vertices();
+    return sceneMeshVertices;
 }
 
 const std::vector<uint16_t>& Scene::meshIndices() const {
-    return CubeMesh::indices();
+    return sceneMeshIndices;
 }
 
-uint32_t Scene::meshIndexCount() const {
-    return static_cast<uint32_t>(meshIndices().size());
+const Scene::MeshSlice& Scene::meshSliceFor(const GameObject& object) const {
+    return lodMeshSlices[object.meshSliceIndex];
+}
+
+uint32_t Scene::meshLodCount() const {
+    return static_cast<uint32_t>(lodMeshSlices.size());
 }
 
 const std::vector<GameObject>& Scene::renderables() const {
@@ -105,14 +119,40 @@ glm::mat4 Scene::projectionMatrix(float aspectRatio) const {
     return player.camera().projectionMatrix(aspectRatio);
 }
 
+void Scene::buildLodSphereMeshes() {
+    lodMeshSlices.clear();
+    sceneMeshVertices.clear();
+    sceneMeshIndices.clear();
+
+    for (const auto& [latSegments, lonSegments] : kSphereLods) {
+        MeshData lodMesh = SphereMesh::createUvSphere(latSegments, lonSegments);
+
+        const uint32_t firstIndex = static_cast<uint32_t>(sceneMeshIndices.size());
+        const uint32_t indexCount = static_cast<uint32_t>(lodMesh.indices.size());
+        const int32_t vertexOffset = static_cast<int32_t>(sceneMeshVertices.size());
+
+        sceneMeshVertices.insert(sceneMeshVertices.end(), lodMesh.vertices.begin(), lodMesh.vertices.end());
+
+        for (uint16_t index : lodMesh.indices) {
+            const uint32_t combinedIndex = static_cast<uint32_t>(index) + static_cast<uint32_t>(vertexOffset);
+            sceneMeshIndices.push_back(static_cast<uint16_t>(combinedIndex));
+        }
+
+        lodMeshSlices.push_back(MeshSlice{
+            .firstIndex = firstIndex,
+            .indexCount = indexCount,
+            .vertexOffset = 0
+        });
+    }
+}
+
 void Scene::initializeSolarMvpBodies() {
     objects.clear();
     bodies.clear();
 
     auto addBody = [this](const CelestialBody& bodyTemplate) {
         GameObject& object = createGameObject(bodyTemplate.name);
-        object.mesh.vertices = &CubeMesh::vertices();
-        object.mesh.indices = &CubeMesh::indices();
+        object.meshSliceIndex = 1;
         object.transform.scale = glm::vec3(bodyTemplate.visualScale);
         bodies.push_back(bodyTemplate);
     };
@@ -158,26 +198,47 @@ void Scene::simulateBodies() {
         const CelestialBody& body = bodies[index];
         GameObject& object = objects[index];
 
-        glm::dvec3 parentPositionKm = {0.0, 0.0, 0.0};
+        glm::dvec3 parentPositionUnits = {0.0, 0.0, 0.0};
         if (body.parentBodyIndex.has_value()) {
-            parentPositionKm = objects[body.parentBodyIndex.value()].transform.worldPosition / KM_TO_WORLD_UNITS;
+            parentPositionUnits = objects[body.parentBodyIndex.value()].transform.worldPosition;
         }
 
-        glm::dvec3 orbitOffsetKm = {0.0, 0.0, 0.0};
+        glm::dvec3 orbitOffsetUnits = {0.0, 0.0, 0.0};
         if (body.orbitRadiusKm > 0.0 && body.orbitPeriodDays > 0.0) {
+            double orbitRadiusUnits = body.orbitRadiusKm * KM_TO_WORLD_UNITS;
+            if (body.parentBodyIndex.has_value()) {
+                const GameObject& parentObject = objects[body.parentBodyIndex.value()];
+                const double parentVisualRadius = static_cast<double>(parentObject.transform.scale.x);
+                const double bodyVisualRadius = static_cast<double>(body.visualScale);
+                const double minimumVisualOrbitRadius = (parentVisualRadius + bodyVisualRadius) * 2.4;
+                orbitRadiusUnits = std::max(orbitRadiusUnits, minimumVisualOrbitRadius);
+            }
+
             const double angle = glm::radians(body.orbitPhaseDegrees) + tau * (elapsedSimulationDays / body.orbitPeriodDays);
-            orbitOffsetKm.x = std::cos(angle) * body.orbitRadiusKm;
-            orbitOffsetKm.y = std::sin(angle) * body.orbitRadiusKm;
+            orbitOffsetUnits.x = std::cos(angle) * orbitRadiusUnits;
+            orbitOffsetUnits.y = std::sin(angle) * orbitRadiusUnits;
         }
 
-        glm::dvec3 worldPositionKm = parentPositionKm + orbitOffsetKm;
-        object.transform.worldPosition = worldPositionKm * KM_TO_WORLD_UNITS;
+        object.transform.worldPosition = parentPositionUnits + orbitOffsetUnits;
+
+        const double distanceToCamera = glm::length(object.transform.worldPosition - player.worldPosition());
+        object.meshSliceIndex = lodForDistance(distanceToCamera);
 
         if (body.rotationPeriodHours > 0.0) {
             const double rotationDegrees = wrapDegrees((elapsedSimulationDays * 24.0 / body.rotationPeriodHours) * 360.0);
             object.transform.rotationEulerDegrees = glm::vec3(0.0f, 0.0f, static_cast<float>(rotationDegrees));
         }
     }
+}
+
+uint32_t Scene::lodForDistance(double distanceToCameraUnits) const {
+    if (distanceToCameraUnits < 8.0) {
+        return 0;
+    }
+    if (distanceToCameraUnits < 35.0) {
+        return 1;
+    }
+    return 2;
 }
 
 double Scene::wrapDegrees(double angleDegrees) {

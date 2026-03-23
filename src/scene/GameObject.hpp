@@ -24,5 +24,6 @@ public:
     std::string name;
     bool isActive = true;
     Transform transform;
+    uint32_t meshSliceIndex = 0;
     MeshReference mesh;
 };
