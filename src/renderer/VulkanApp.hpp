@@ -7,6 +7,8 @@
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
 
+#include "scene/Scene.hpp"
+
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -19,14 +21,6 @@ public:
     void run();
 
 private:
-    struct Vertex {
-        glm::vec3 pos;
-        glm::vec3 color;
-
-        static VkVertexInputBindingDescription getBindingDescription();
-        static std::array<VkVertexInputAttributeDescription, 2> getAttributeDescriptions();
-    };
-
     struct UniformBufferObject {
         glm::mat4 model;
         glm::mat4 view;
@@ -82,7 +76,6 @@ private:
     void updateUniformBuffer(uint32_t currentImage);
 
     VkShaderModule createShaderModule(const std::vector<char>& code);
-    std::vector<char> readFile(const std::string& filename);
 
     QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) const;
     bool isDeviceSuitable(VkPhysicalDevice device) const;
@@ -226,25 +219,7 @@ private:
     std::vector<VkFence> imagesInFlight;
     size_t currentFrame = 0;
 
-    const std::vector<Vertex> vertices = {
-        {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-        {{ 0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-        {{ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},
-        {{-0.5f,  0.5f, -0.5f}, {1.0f, 1.0f, 0.0f}},
-        {{-0.5f, -0.5f,  0.5f}, {1.0f, 0.0f, 1.0f}},
-        {{ 0.5f, -0.5f,  0.5f}, {0.0f, 1.0f, 1.0f}},
-        {{ 0.5f,  0.5f,  0.5f}, {1.0f, 1.0f, 1.0f}},
-        {{-0.5f,  0.5f,  0.5f}, {0.2f, 0.2f, 0.2f}}
-    };
-
-    const std::vector<uint16_t> indices = {
-        0, 2, 1, 0, 3, 2,
-        4, 5, 6, 4, 6, 7,
-        0, 4, 7, 7, 3, 0,
-        1, 6, 5, 6, 1, 2,
-        3, 6, 2, 3, 7, 6,
-        0, 1, 5, 0, 5, 4
-    };
+    Scene scene;
 
     std::chrono::high_resolution_clock::time_point startTime;
 };

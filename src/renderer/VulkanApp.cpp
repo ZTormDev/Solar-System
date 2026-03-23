@@ -1,40 +1,14 @@
 #include "VulkanApp.hpp"
 
-#include <glm/gtc/matrix_transform.hpp>
+#include "core/FileLoader.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cstring>
-#include <fstream>
 #include <iostream>
-#include <filesystem>
 #include <set>
 #include <stdexcept>
 #include <unordered_set>
-
-VkVertexInputBindingDescription VulkanApp::Vertex::getBindingDescription() {
-    VkVertexInputBindingDescription bindingDescription{};
-    bindingDescription.binding = 0;
-    bindingDescription.stride = sizeof(Vertex);
-    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-    return bindingDescription;
-}
-
-std::array<VkVertexInputAttributeDescription, 2> VulkanApp::Vertex::getAttributeDescriptions() {
-    std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
-
-    attributeDescriptions[0].binding = 0;
-    attributeDescriptions[0].location = 0;
-    attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributeDescriptions[0].offset = offsetof(Vertex, pos);
-
-    attributeDescriptions[1].binding = 0;
-    attributeDescriptions[1].location = 1;
-    attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributeDescriptions[1].offset = offsetof(Vertex, color);
-
-    return attributeDescriptions;
-}
 
 void VulkanApp::run() {
     initWindow();
@@ -577,8 +551,8 @@ void VulkanApp::createDescriptorSetLayout() {
 }
 
 void VulkanApp::createGraphicsPipeline() {
-    auto vertShaderCode = readFile("shaders/cube.vert.spv");
-    auto fragShaderCode = readFile("shaders/cube.frag.spv");
+    auto vertShaderCode = FileLoader::readBinaryFile("shaders/cube.vert.spv");
+    auto fragShaderCode = FileLoader::readBinaryFile("shaders/cube.frag.spv");
 
     VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
     VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
@@ -756,6 +730,7 @@ void VulkanApp::createDepthResources() {
 }
 
 void VulkanApp::createVertexBuffer() {
+    const auto& vertices = scene.activeVertices();
     VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
 
     VkBuffer stagingBuffer;
@@ -788,6 +763,7 @@ void VulkanApp::createVertexBuffer() {
 }
 
 void VulkanApp::createIndexBuffer() {
+    const auto& indices = scene.activeIndices();
     VkDeviceSize bufferSize = sizeof(indices[0]) * indices.size();
 
     VkBuffer stagingBuffer;
@@ -941,7 +917,7 @@ void VulkanApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
         nullptr
     );
 
-    vkCmdDrawIndexed(commandBuffer, static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+    vkCmdDrawIndexed(commandBuffer, scene.activeIndexCount(), 1, 0, 0, 0);
 
     vkCmdEndRenderPass(commandBuffer);
 
@@ -1052,17 +1028,14 @@ void VulkanApp::drawFrame() {
 void VulkanApp::updateUniformBuffer(uint32_t currentImage) {
     auto now = std::chrono::high_resolution_clock::now();
     float time = std::chrono::duration<float, std::chrono::seconds::period>(now - startTime).count();
+    scene.update(time);
 
     UniformBufferObject ubo{};
-    ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(45.0f), glm::vec3(0.3f, 1.0f, 0.0f));
-    ubo.view = glm::lookAt(glm::vec3(2.2f, 2.2f, 2.2f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-    ubo.proj = glm::perspective(
-        glm::radians(45.0f),
-        static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height),
-        0.1f,
-        10.0f
+    ubo.model = scene.activeModelMatrix();
+    ubo.view = scene.viewMatrix();
+    ubo.proj = scene.projectionMatrix(
+        static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height)
     );
-    ubo.proj[1][1] *= -1.0f;
 
     std::memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 }
@@ -1311,38 +1284,6 @@ void VulkanApp::endSingleTimeCommands(VkCommandBuffer commandBuffer) {
     vkQueueWaitIdle(graphicsQueue);
 
     vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
-}
-
-std::vector<char> VulkanApp::readFile(const std::string& filename) {
-    std::vector<std::filesystem::path> candidates = {
-        std::filesystem::path(filename),
-        std::filesystem::path("..") / filename,
-        std::filesystem::path("..") / ".." / filename,
-        std::filesystem::path("build") / filename,
-        std::filesystem::path("..") / "build" / filename
-    };
-
-    std::ifstream file;
-    for (const auto& candidate : candidates) {
-        file = std::ifstream(candidate, std::ios::ate | std::ios::binary);
-        if (file.is_open()) {
-            break;
-        }
-    }
-
-    if (!file.is_open()) {
-        throw std::runtime_error("Failed to open file: " + filename + " (tried cwd, ../ and ../../)");
-    }
-
-    size_t fileSize = static_cast<size_t>(file.tellg());
-    std::vector<char> buffer(fileSize);
-
-    file.seekg(0);
-    file.read(buffer.data(), static_cast<std::streamsize>(fileSize));
-
-    file.close();
-
-    return buffer;
 }
 
 VkShaderModule VulkanApp::createShaderModule(const std::vector<char>& code) {

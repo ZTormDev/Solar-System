@@ -11,6 +11,12 @@ find_package(glm CONFIG REQUIRED)
 
 add_executable(SolarSystem
     src/main.cpp
+    src/core/FileLoader.cpp
+    src/scene/CubeMesh.cpp
+    src/scene/Camera.cpp
+    src/scene/Scene.cpp
+    src/scene/Transform.cpp
+    src/renderer/Vertex.cpp
     src/renderer/VulkanApp.cpp
 )
 

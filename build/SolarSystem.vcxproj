@@ -426,6 +426,12 @@ if %errorlevel% neq 0 goto :VCEnd</Command>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="D:\Solar-System\src\main.cpp" />
+    <ClCompile Include="D:\Solar-System\src\core\FileLoader.cpp" />
+    <ClCompile Include="D:\Solar-System\src\scene\CubeMesh.cpp" />
+    <ClCompile Include="D:\Solar-System\src\scene\Camera.cpp" />
+    <ClCompile Include="D:\Solar-System\src\scene\Scene.cpp" />
+    <ClCompile Include="D:\Solar-System\src\scene\Transform.cpp" />
+    <ClCompile Include="D:\Solar-System\src\renderer\Vertex.cpp" />
     <ClCompile Include="D:\Solar-System\src\renderer\VulkanApp.cpp" />
   </ItemGroup>
   <ItemGroup />
