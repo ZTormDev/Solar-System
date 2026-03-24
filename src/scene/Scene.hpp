@@ -36,7 +36,7 @@ public:
     Camera& mainCamera();
     const Camera& mainCamera() const;
 
-    void update(GLFWwindow* window, float timeSeconds, float deltaTimeSeconds);
+    void update(SDL_Window* window, float timeSeconds, float deltaTimeSeconds);
 
     const std::vector<Vertex>& meshVertices() const;
     const std::vector<uint16_t>& meshIndices() const;

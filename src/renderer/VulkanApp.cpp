@@ -3,7 +3,7 @@
 #include "core/FileLoader.hpp"
 
 #include <imgui.h>
-#include <imgui_impl_glfw.h>
+#include <imgui_impl_sdl3.h>
 #include <imgui_impl_vulkan.h>
 
 #include <algorithm>
@@ -18,20 +18,30 @@
 void VulkanApp::run() {
     initWindow();
     initVulkan();
+
+    audioSystem.init();
+    audioSystem.playMusic("d:/Solar-System/assets/music.ogg", 0.25f, true);
+
     mainLoop();
     cleanup();
 }
 
+
 void VulkanApp::initWindow() {
-    glfwInit();
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
+        throw std::runtime_error(std::string("Failed to initialize SDL: ") + SDL_GetError());
+    }
 
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
-    glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
+    window = SDL_CreateWindow(
+        "Solar System Engine MVP",
+        WIDTH,
+        HEIGHT,
+        SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED
+    );
 
-    window = glfwCreateWindow(WIDTH, HEIGHT, "Solar System Engine MVP", nullptr, nullptr);
-    glfwSetWindowUserPointer(window, this);
-    glfwSetFramebufferSizeCallback(window, framebufferResizeCallback);
+    if (!window) {
+        throw std::runtime_error(std::string("Failed to create SDL window: ") + SDL_GetError());
+    }
 }
 
 void VulkanApp::initVulkan() {
@@ -61,8 +71,17 @@ void VulkanApp::initVulkan() {
 }
 
 void VulkanApp::mainLoop() {
-    while (!glfwWindowShouldClose(window)) {
-        glfwPollEvents();
+    while (!shouldQuit) {
+        SDL_Event event;
+        while (SDL_PollEvent(&event)) {
+            ImGui_ImplSDL3_ProcessEvent(&event);
+            if (event.type == SDL_EVENT_QUIT) {
+                shouldQuit = true;
+            }
+            if (event.type == SDL_EVENT_WINDOW_RESIZED) {
+                framebufferResized = true;
+            }
+        }
         drawFrame();
     }
 
@@ -104,6 +123,8 @@ void VulkanApp::cleanupSwapChain() {
 }
 
 void VulkanApp::cleanup() {
+    audioSystem.shutdown();
+
     cleanupSwapChain();
 
     vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
@@ -130,17 +151,17 @@ void VulkanApp::cleanup() {
     vkDestroySurfaceKHR(instance, surface, nullptr);
     vkDestroyInstance(instance, nullptr);
 
-    glfwDestroyWindow(window);
-    glfwTerminate();
+    SDL_DestroyWindow(window);
+    SDL_Quit();
 }
 
 void VulkanApp::recreateSwapChain() {
     int width = 0;
     int height = 0;
-    glfwGetFramebufferSize(window, &width, &height);
+    SDL_GetWindowSizeInPixels(window, &width, &height);
     while (width == 0 || height == 0) {
-        glfwGetFramebufferSize(window, &width, &height);
-        glfwWaitEvents();
+        SDL_GetWindowSizeInPixels(window, &width, &height);
+        SDL_WaitEvent(nullptr);
     }
 
     vkDeviceWaitIdle(device);
@@ -228,7 +249,7 @@ void VulkanApp::setupDebugMessenger() {
 }
 
 void VulkanApp::createSurface() {
-    if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+    if (!SDL_Vulkan_CreateSurface(window, instance, nullptr, &surface)) {
         throw std::runtime_error("Failed to create window surface.");
     }
 }
@@ -404,7 +425,7 @@ VkExtent2D VulkanApp::chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilit
 
     int width;
     int height;
-    glfwGetFramebufferSize(window, &width, &height);
+    SDL_GetWindowSizeInPixels(window, &width, &height);
 
     VkExtent2D actualExtent = {
         static_cast<uint32_t>(width),
@@ -1018,7 +1039,7 @@ void VulkanApp::drawFrame() {
     updateUniformBuffer(imageIndex);
 
     ImGui_ImplVulkan_NewFrame();
-    ImGui_ImplGlfw_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 
     ImGuiIO& io = ImGui::GetIO();
@@ -1252,7 +1273,7 @@ void VulkanApp::initImGui() {
     ImGui::CreateContext();
     ImGui::StyleColorsDark();
 
-    ImGui_ImplGlfw_InitForVulkan(window, true);
+    ImGui_ImplSDL3_InitForVulkan(window);
 
     QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
 
@@ -1287,7 +1308,7 @@ void VulkanApp::cleanupImGui() {
 
     vkDeviceWaitIdle(device);
     ImGui_ImplVulkan_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
 
     vkDestroyDescriptorPool(device, imguiDescriptorPool, nullptr);
@@ -1556,11 +1577,10 @@ VkShaderModule VulkanApp::createShaderModule(const std::vector<char>& code) {
 }
 
 std::vector<const char*> VulkanApp::getRequiredExtensions() const {
-    uint32_t glfwExtensionCount = 0;
-    const char** glfwExtensions;
-    glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
+    Uint32 sdlExtensionCount = 0;
+    const char* const* sdlExtensions = SDL_Vulkan_GetInstanceExtensions(&sdlExtensionCount);
 
-    std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+    std::vector<const char*> extensions(sdlExtensions, sdlExtensions + sdlExtensionCount);
 
     if (enableValidationLayers) {
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
@@ -1594,10 +1614,7 @@ bool VulkanApp::checkValidationLayerSupport() const {
     return true;
 }
 
-void VulkanApp::framebufferResizeCallback(GLFWwindow* window, int, int) {
-    auto app = reinterpret_cast<VulkanApp*>(glfwGetWindowUserPointer(window));
-    app->framebufferResized = true;
-}
+
 
 VKAPI_ATTR VkBool32 VKAPI_CALL VulkanApp::debugCallback(
     VkDebugUtilsMessageSeverityFlagBitsEXT,

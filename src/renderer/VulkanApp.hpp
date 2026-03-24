@@ -1,13 +1,15 @@
 #pragma once
 
-#define GLFW_INCLUDE_VULKAN
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
+#include <vulkan/vulkan.h>
 #include <glm/glm.hpp>
 
 #include "scene/Scene.hpp"
+#include "audio/AudioSystem.hpp"
 
 #include <array>
 #include <chrono>
@@ -133,7 +135,6 @@ private:
     std::vector<const char*> getRequiredExtensions() const;
     bool checkValidationLayerSupport() const;
 
-    static void framebufferResizeCallback(GLFWwindow* window, int width, int height);
     static VKAPI_ATTR VkBool32 VKAPI_CALL debugCallback(
         VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
         VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -175,8 +176,9 @@ private:
     const bool enableValidationLayers = true;
 #endif
 
-    GLFWwindow* window = nullptr;
+    SDL_Window* window = nullptr;
     bool framebufferResized = false;
+    bool shouldQuit = false;
 
     VkInstance instance = VK_NULL_HANDLE;
     VkDebugUtilsMessengerEXT debugMessenger = VK_NULL_HANDLE;
@@ -231,6 +233,7 @@ private:
     bool imguiInitialized = false;
 
     Scene scene;
+    AudioSystem audioSystem;
 
     std::chrono::high_resolution_clock::time_point startTime;
     float previousFrameTimeSeconds = 0.0f;

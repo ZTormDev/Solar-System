@@ -15,10 +15,12 @@ Player::Player() {
     updateCameraVectors();
 }
 
-void Player::updateFromInput(GLFWwindow* window, float deltaTimeSeconds) {
-    const bool movementInputPressed = isMovementInputPressed(window);
+void Player::updateFromInput(SDL_Window* window, float deltaTimeSeconds) {
+    const bool movementInputPressed = isMovementInputPressed();
 
-    const bool isEscPressed = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+    const bool* keyState = SDL_GetKeyboardState(nullptr);
+
+    const bool isEscPressed = keyState[SDL_SCANCODE_ESCAPE];
     if (isEscPressed && !escWasPressed) {
         mouseCaptured = !mouseCaptured;
         firstMouseSample = true;
@@ -26,7 +28,7 @@ void Player::updateFromInput(GLFWwindow* window, float deltaTimeSeconds) {
     escWasPressed = isEscPressed;
 
     float speedMultiplier = 1.0f;
-    if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+    if (keyState[SDL_SCANCODE_LSHIFT]) {
         speedMultiplier = sprintMultiplier;
     }
 
@@ -40,29 +42,30 @@ void Player::updateFromInput(GLFWwindow* window, float deltaTimeSeconds) {
     }
 
     if (!orbitFollowActive) {
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+        if (keyState[SDL_SCANCODE_W]) {
             playerWorldPosition += glm::dvec3(front) * static_cast<double>(velocity);
         }
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+        if (keyState[SDL_SCANCODE_S]) {
             playerWorldPosition -= glm::dvec3(front) * static_cast<double>(velocity);
         }
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+        if (keyState[SDL_SCANCODE_A]) {
             playerWorldPosition -= glm::dvec3(right) * static_cast<double>(velocity);
         }
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+        if (keyState[SDL_SCANCODE_D]) {
             playerWorldPosition += glm::dvec3(right) * static_cast<double>(velocity);
         }
-        if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
+        if (keyState[SDL_SCANCODE_E]) {
             playerWorldPosition += glm::dvec3(worldUp) * static_cast<double>(velocity);
         }
-        if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+        if (keyState[SDL_SCANCODE_Q]) {
             playerWorldPosition -= glm::dvec3(worldUp) * static_cast<double>(velocity);
         }
     }
 
-    const bool isFocused = glfwGetWindowAttrib(window, GLFW_FOCUSED) == GLFW_TRUE;
+    const SDL_WindowFlags windowFlags = SDL_GetWindowFlags(window);
+    const bool isFocused = (windowFlags & SDL_WINDOW_INPUT_FOCUS) != 0;
     if (!isFocused) {
-        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        SDL_SetWindowRelativeMouseMode(window, false);
         firstMouseSample = true;
         playerCamera.position = {0.0f, 0.0f, 0.0f};
         playerCamera.target = front;
@@ -72,7 +75,7 @@ void Player::updateFromInput(GLFWwindow* window, float deltaTimeSeconds) {
     }
 
     if (!mouseCaptured) {
-        glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        SDL_SetWindowRelativeMouseMode(window, false);
         firstMouseSample = true;
         if (orbitFollowActive) {
             const glm::dvec3 targetDirection = orbitTargetWorldPosition - playerWorldPosition;
@@ -90,32 +93,19 @@ void Player::updateFromInput(GLFWwindow* window, float deltaTimeSeconds) {
         return;
     }
 
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    SDL_SetWindowRelativeMouseMode(window, true);
 
-    int windowWidth = 0;
-    int windowHeight = 0;
-    glfwGetWindowSize(window, &windowWidth, &windowHeight);
-    const double centerX = static_cast<double>(windowWidth) * 0.5;
-    const double centerY = static_cast<double>(windowHeight) * 0.5;
-
-    double mouseX = 0.0;
-    double mouseY = 0.0;
-    glfwGetCursorPos(window, &mouseX, &mouseY);
+    float relX = 0.0f, relY = 0.0f;
+    SDL_GetRelativeMouseState(&relX, &relY);
 
     if (firstMouseSample) {
-        mouseX = centerX;
-        mouseY = centerY;
-        lastMouseX = centerX;
-        lastMouseY = centerY;
-        glfwSetCursorPos(window, centerX, centerY);
+        relX = 0.0f;
+        relY = 0.0f;
         firstMouseSample = false;
     }
 
-    const float offsetX = static_cast<float>(mouseX - centerX) * lookSensitivity;
-    const float offsetY = static_cast<float>(centerY - mouseY) * lookSensitivity;
-    lastMouseX = centerX;
-    lastMouseY = centerY;
-    glfwSetCursorPos(window, centerX, centerY);
+    const float offsetX = relX * lookSensitivity;
+    const float offsetY = -relY * lookSensitivity;
 
     yawDegrees -= offsetX;
     pitchDegrees += offsetY;
@@ -161,7 +151,6 @@ void Player::adjustMoveSpeedFromMouseWheel(float mouseWheelDelta, bool uiCapturi
     constexpr float minMoveSpeed = 0.25f;
     constexpr float speedExponentialBasePerWheelTick = 1.2f;
 
-    // no max move speed
     moveSpeedUnitsPerSecond = std::max(
         minMoveSpeed,
         moveSpeedUnitsPerSecond * std::pow(speedExponentialBasePerWheelTick, mouseWheelDelta)
@@ -253,13 +242,14 @@ bool Player::isOrbitFollowActive() const {
     return orbitFollowActive;
 }
 
-bool Player::isMovementInputPressed(GLFWwindow* window) const {
-    return glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS ||
-           glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS ||
-           glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS ||
-           glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS ||
-           glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS ||
-           glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS;
+bool Player::isMovementInputPressed() const {
+    const bool* keyState = SDL_GetKeyboardState(nullptr);
+    return keyState[SDL_SCANCODE_W] ||
+           keyState[SDL_SCANCODE_A] ||
+           keyState[SDL_SCANCODE_S] ||
+           keyState[SDL_SCANCODE_D] ||
+           keyState[SDL_SCANCODE_Q] ||
+           keyState[SDL_SCANCODE_E];
 }
 
 void Player::updateCameraVectors() {

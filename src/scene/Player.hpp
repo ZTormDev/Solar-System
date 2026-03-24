@@ -2,14 +2,14 @@
 
 #include "scene/Camera.hpp"
 
-#include <GLFW/glfw3.h>
+#include <SDL3/SDL.h>
 #include <glm/glm.hpp>
 
 class Player {
 public:
     Player();
 
-    void updateFromInput(GLFWwindow* window, float deltaTimeSeconds);
+    void updateFromInput(SDL_Window* window, float deltaTimeSeconds);
     void adjustMoveSpeedFromMouseWheel(float mouseWheelDelta, bool uiCapturingMouse);
     float moveSpeedUnitsPerSecondValue() const;
     void setSprintMultiplier(float value);
@@ -25,7 +25,7 @@ public:
     bool isOrbitFollowActive() const;
 
 private:
-    bool isMovementInputPressed(GLFWwindow* window) const;
+    bool isMovementInputPressed() const;
     void updateCameraVectors();
 
     Camera playerCamera;
@@ -53,6 +53,4 @@ private:
     bool escWasPressed = false;
 
     bool firstMouseSample = true;
-    double lastMouseX = 0.0;
-    double lastMouseY = 0.0;
 };

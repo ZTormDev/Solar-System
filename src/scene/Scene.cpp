@@ -98,7 +98,7 @@ const Player& Scene::mainPlayer() const {
     return player;
 }
 
-void Scene::update(GLFWwindow* window, float timeSeconds, float deltaTimeSeconds) {
+void Scene::update(SDL_Window* window, float timeSeconds, float deltaTimeSeconds) {
     elapsedSeconds = timeSeconds;
 
     if (window != nullptr) {

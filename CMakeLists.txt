@@ -6,13 +6,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Vulkan REQUIRED)
-find_package(glfw3 CONFIG REQUIRED)
 find_package(glm CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
+find_package(SDL3 CONFIG REQUIRED)
+find_package(SDL3_mixer CONFIG REQUIRED)
 
 add_executable(SolarSystem
     src/main.cpp
     src/core/FileLoader.cpp
+    src/audio/AudioSystem.cpp
     src/scene/CubeMesh.cpp
     src/scene/SphereMesh.cpp
     src/scene/Camera.cpp
@@ -27,9 +29,10 @@ target_include_directories(SolarSystem PRIVATE src)
 
 target_link_libraries(SolarSystem PRIVATE
     Vulkan::Vulkan
-    glfw
     glm::glm
     imgui::imgui
+    SDL3::SDL3
+    SDL3_mixer::SDL3_mixer
 )
 
 if(MSVC)
