@@ -21,21 +21,16 @@ public:
     void run();
 
 private:
-    static constexpr uint32_t MAX_SHADOW_BODIES = 16;
-
     struct UniformBufferObject {
         glm::mat4 view;
         glm::mat4 proj;
         glm::vec4 sunWorldPosition;
-        std::array<glm::vec4, MAX_SHADOW_BODIES> shadowBodySpheres;
-        glm::vec4 shadowMeta;
     };
 
     struct PushConstants {
         glm::mat4 model;
         glm::vec4 tint;
         glm::vec4 material;
-        glm::vec4 objectInfo;
     };
 
     struct QueueFamilyIndices {

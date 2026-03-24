@@ -34,14 +34,8 @@ void Player::updateFromInput(GLFWwindow* window, float deltaTimeSeconds) {
 
     if (orbitFollowActive) {
         orbitCancelGraceSeconds = std::max(0.0f, orbitCancelGraceSeconds - deltaTimeSeconds);
-        if (orbitCancelGraceSeconds <= 0.0f) {
-            if (!orbitCancelMovementArmed) {
-                if (!movementInputPressed) {
-                    orbitCancelMovementArmed = true;
-                }
-            } else if (movementInputPressed) {
-                cancelOrbitFollow();
-            }
+        if (orbitCancelGraceSeconds <= 0.0f && movementInputPressed && !movementInputWasPressedLastFrame) {
+            cancelOrbitFollow();
         }
     }
 
@@ -73,6 +67,7 @@ void Player::updateFromInput(GLFWwindow* window, float deltaTimeSeconds) {
         playerCamera.position = {0.0f, 0.0f, 0.0f};
         playerCamera.target = front;
         playerCamera.worldPosition = playerWorldPosition;
+        movementInputWasPressedLastFrame = movementInputPressed;
         return;
     }
 
@@ -91,25 +86,36 @@ void Player::updateFromInput(GLFWwindow* window, float deltaTimeSeconds) {
         }
         playerCamera.position = {0.0f, 0.0f, 0.0f};
         playerCamera.worldPosition = playerWorldPosition;
+        movementInputWasPressedLastFrame = movementInputPressed;
         return;
     }
 
     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+    int windowWidth = 0;
+    int windowHeight = 0;
+    glfwGetWindowSize(window, &windowWidth, &windowHeight);
+    const double centerX = static_cast<double>(windowWidth) * 0.5;
+    const double centerY = static_cast<double>(windowHeight) * 0.5;
 
     double mouseX = 0.0;
     double mouseY = 0.0;
     glfwGetCursorPos(window, &mouseX, &mouseY);
 
     if (firstMouseSample) {
-        lastMouseX = mouseX;
-        lastMouseY = mouseY;
+        mouseX = centerX;
+        mouseY = centerY;
+        lastMouseX = centerX;
+        lastMouseY = centerY;
+        glfwSetCursorPos(window, centerX, centerY);
         firstMouseSample = false;
     }
 
-    const float offsetX = static_cast<float>(mouseX - lastMouseX) * lookSensitivity;
-    const float offsetY = static_cast<float>(lastMouseY - mouseY) * lookSensitivity;
-    lastMouseX = mouseX;
-    lastMouseY = mouseY;
+    const float offsetX = static_cast<float>(mouseX - centerX) * lookSensitivity;
+    const float offsetY = static_cast<float>(centerY - mouseY) * lookSensitivity;
+    lastMouseX = centerX;
+    lastMouseY = centerY;
+    glfwSetCursorPos(window, centerX, centerY);
 
     yawDegrees -= offsetX;
     pitchDegrees += offsetY;
@@ -131,6 +137,7 @@ void Player::updateFromInput(GLFWwindow* window, float deltaTimeSeconds) {
 
     playerCamera.position = {0.0f, 0.0f, 0.0f};
     playerCamera.worldPosition = playerWorldPosition;
+    movementInputWasPressedLastFrame = movementInputPressed;
 }
 
 void Player::adjustMoveSpeedFromMouseWheel(float mouseWheelDelta, bool uiCapturingMouse) {
@@ -194,8 +201,8 @@ void Player::beginOrbitFollow(const glm::dvec3& targetWorldPosition, double desi
     orbitFollowActive = true;
     mouseCaptured = true;
     firstMouseSample = true;
-    orbitCancelGraceSeconds = 0.12f;
-    orbitCancelMovementArmed = false;
+    orbitCancelGraceSeconds = 0.2f;
+    movementInputWasPressedLastFrame = false;
     orbitTargetWorldPosition = targetWorldPosition;
     orbitDistanceUnits = std::max(1000.0, desiredDistanceUnits);
 
@@ -239,7 +246,6 @@ void Player::updateOrbitFollowTarget(const glm::dvec3& targetWorldPosition) {
 void Player::cancelOrbitFollow() {
     orbitFollowActive = false;
     orbitCancelGraceSeconds = 0.0f;
-    orbitCancelMovementArmed = false;
     playerCamera.target = front;
 }
 

@@ -47,7 +47,7 @@ private:
     glm::dvec3 orbitTargetWorldPosition = {0.0, 0.0, 0.0};
     double orbitDistanceUnits = 1000000.0;
     float orbitCancelGraceSeconds = 0.0f;
-    bool orbitCancelMovementArmed = false;
+    bool movementInputWasPressedLastFrame = false;
 
     bool mouseCaptured = true;
     bool escWasPressed = false;

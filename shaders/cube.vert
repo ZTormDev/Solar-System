@@ -12,15 +12,12 @@ layout(binding = 0) uniform UniformBufferObject {
     mat4 view;
     mat4 proj;
     vec4 sunWorldPosition;
-    vec4 shadowBodySpheres[16];
-    vec4 shadowMeta;
 } ubo;
 
 layout(push_constant) uniform PushConstants {
     mat4 model;
     vec4 tint;
     vec4 material;
-    vec4 objectInfo;
 } pushConstants;
 
 void main() {
