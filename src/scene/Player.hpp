@@ -18,8 +18,14 @@ public:
     Camera& camera();
     const Camera& camera() const;
     const glm::dvec3& worldPosition() const;
+    void teleportToWorldPosition(const glm::dvec3& worldPosition);
+    void beginOrbitFollow(const glm::dvec3& targetWorldPosition, double desiredDistanceUnits);
+    void updateOrbitFollowTarget(const glm::dvec3& targetWorldPosition);
+    void cancelOrbitFollow();
+    bool isOrbitFollowActive() const;
 
 private:
+    bool isMovementInputPressed(GLFWwindow* window) const;
     void updateCameraVectors();
 
     Camera playerCamera;
@@ -33,9 +39,15 @@ private:
     float yawDegrees = -90.0f;
     float pitchDegrees = 0.0f;
 
-    float moveSpeedUnitsPerSecond = 2.7f;
-    float sprintMultiplier = 2.5f;
+    float moveSpeedUnitsPerSecond = 100000.0f;
+    float sprintMultiplier = 3.0f;
     float lookSensitivity = 0.12f;
+
+    bool orbitFollowActive = false;
+    glm::dvec3 orbitTargetWorldPosition = {0.0, 0.0, 0.0};
+    double orbitDistanceUnits = 1000000.0;
+    float orbitCancelGraceSeconds = 0.0f;
+    bool orbitCancelMovementArmed = false;
 
     bool mouseCaptured = true;
     bool escWasPressed = false;

@@ -5,6 +5,9 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <functional>
+
+#include <glm/gtc/constants.hpp>
 
 namespace {
 constexpr std::array<std::pair<uint32_t, uint32_t>, 5> kSphereLods = {
@@ -14,14 +17,56 @@ constexpr std::array<std::pair<uint32_t, uint32_t>, 5> kSphereLods = {
     std::pair<uint32_t, uint32_t>{48u, 96u},
     std::pair<uint32_t, uint32_t>{32u, 64u}
 };
+
+constexpr std::array<double, 4> kLodRatioThresholds = {5.0, 10.0, 22.0, 55.0};
+constexpr double kLodHysteresisFactor = 0.18;
+
+uint32_t chooseLodWithHysteresis(double distanceToRadiusRatio, uint32_t currentLod, uint32_t maxLod) {
+    if (maxLod == 0) {
+        return 0;
+    }
+
+    currentLod = std::min(currentLod, maxLod);
+
+    while (currentLod > 0) {
+        const std::size_t boundaryIndex = static_cast<std::size_t>(currentLod - 1);
+        if (boundaryIndex >= kLodRatioThresholds.size()) {
+            break;
+        }
+
+        const double boundary = kLodRatioThresholds[boundaryIndex] * (1.0 - kLodHysteresisFactor);
+        if (distanceToRadiusRatio < boundary) {
+            --currentLod;
+            continue;
+        }
+        break;
+    }
+
+    while (currentLod < maxLod) {
+        const std::size_t boundaryIndex = static_cast<std::size_t>(currentLod);
+        if (boundaryIndex >= kLodRatioThresholds.size()) {
+            break;
+        }
+
+        const double boundary = kLodRatioThresholds[boundaryIndex] * (1.0 + kLodHysteresisFactor);
+        if (distanceToRadiusRatio > boundary) {
+            ++currentLod;
+            continue;
+        }
+        break;
+    }
+
+    return currentLod;
+}
 }
 
 Scene::Scene() {
     buildLodSphereMeshes();
     initializeSolarMvpBodies();
-    initializeNBodyState();
+    initializePhysicsState();
     syncObjectsFromPhysics();
     updateBodyRotations();
+    updateValidationReport();
 }
 
 GameObject& Scene::createGameObject(const std::string& name) {
@@ -62,21 +107,17 @@ void Scene::update(GLFWwindow* window, float timeSeconds, float deltaTimeSeconds
 
     if (!paused) {
         const double simulatedSeconds = static_cast<double>(deltaTimeSeconds) * static_cast<double>(simulationTimeScale);
-        const uint32_t substepCount = static_cast<uint32_t>(std::max(
-            1.0,
-            std::ceil(simulatedSeconds / MAX_PHYSICS_SUBSTEP_SECONDS)
-        ));
+        const uint32_t substepCount = static_cast<uint32_t>(std::max(1.0, std::ceil(simulatedSeconds / MAX_PHYSICS_SUBSTEP_SECONDS)));
         const double substepSeconds = simulatedSeconds / static_cast<double>(substepCount);
-
         for (uint32_t substepIndex = 0; substepIndex < substepCount; ++substepIndex) {
             stepNBody(substepSeconds);
         }
-
         elapsedSimulationDays += simulatedSeconds / REAL_SECONDS_PER_DAY;
     }
 
     syncObjectsFromPhysics();
     updateBodyRotations();
+    updateValidationReport();
 }
 
 const std::vector<Vertex>& Scene::meshVertices() const {
@@ -123,8 +164,49 @@ double Scene::simulationDays() const {
     return elapsedSimulationDays;
 }
 
+double Scene::currentJulianDay() const {
+    return J2000_JULIAN_DAY + elapsedSimulationDays;
+}
+
 const std::vector<CelestialBody>& Scene::celestialBodies() const {
     return bodies;
+}
+
+const std::vector<Scene::EphemerisValidationEntry>& Scene::ephemerisValidationEntries() const {
+    return validationEntries;
+}
+
+glm::dvec3 Scene::sunWorldPosition() const {
+    const std::size_t count = std::min(bodies.size(), objects.size());
+    for (std::size_t index = 0; index < count; ++index) {
+        if (bodies[index].name == "Sun") {
+            return objects[index].transform.worldPosition;
+        }
+    }
+
+    return glm::dvec3(0.0);
+}
+
+void Scene::followBody(std::size_t bodyIndex) {
+    if (bodyIndex >= objects.size()) {
+        return;
+    }
+
+    currentFollowedBodyIndex = bodyIndex;
+    const GameObject& object = objects[bodyIndex];
+    const double bodyRadiusUnits = std::max(1.0, static_cast<double>(object.transform.scale.x));
+    const double desiredDistanceFromSurface = std::max(10000.0, bodyRadiusUnits * 2.5);
+    const double targetDistanceFromCenter = bodyRadiusUnits + desiredDistanceFromSurface;
+    player.beginOrbitFollow(object.transform.worldPosition, targetDistanceFromCenter);
+}
+
+void Scene::clearFollowBody() {
+    currentFollowedBodyIndex.reset();
+    player.cancelOrbitFollow();
+}
+
+std::optional<std::size_t> Scene::followedBodyIndex() const {
+    return currentFollowedBodyIndex;
 }
 
 glm::mat4 Scene::viewMatrix() const {
@@ -187,6 +269,9 @@ void Scene::initializeSolarMvpBodies() {
         .orbitPeriodDays = 0.0,
         .rotationPeriodHours = 609.12,
         .orbitPhaseDegrees = 0.0,
+        .axialTiltDeg = 7.25,
+        .orbitalElementsJ2000 = std::nullopt,
+        .referenceCheckpoints = {},
         .parentBodyIndex = std::nullopt
     });
 
@@ -198,6 +283,17 @@ void Scene::initializeSolarMvpBodies() {
         .orbitPeriodDays = 365.256,
         .rotationPeriodHours = 23.9345,
         .orbitPhaseDegrees = 20.0,
+        .axialTiltDeg = 23.439281,
+        .orbitalElementsJ2000 = OrbitalElementsJ2000{
+            .semiMajorAxisKm = 149598023.0,
+            .eccentricity = 0.0167086,
+            .inclinationDeg = 0.00005,
+            .longitudeAscendingNodeDeg = -11.26064,
+            .argumentPeriapsisDeg = 114.20783,
+            .meanAnomalyDegAtJ2000 = 357.51716,
+            .meanMotionDegPerDay = 0.9856076686
+        },
+        .referenceCheckpoints = {},
         .parentBodyIndex = 0
     });
 
@@ -209,57 +305,110 @@ void Scene::initializeSolarMvpBodies() {
         .orbitPeriodDays = 27.321661,
         .rotationPeriodHours = 655.72,
         .orbitPhaseDegrees = 35.0,
+        .axialTiltDeg = 6.68,
+        .orbitalElementsJ2000 = OrbitalElementsJ2000{
+            .semiMajorAxisKm = 384399.0,
+            .eccentricity = 0.0549,
+            .inclinationDeg = 5.145,
+            .longitudeAscendingNodeDeg = 125.08,
+            .argumentPeriapsisDeg = 318.15,
+            .meanAnomalyDegAtJ2000 = 115.3654,
+            .meanMotionDegPerDay = 13.176358
+        },
+        .referenceCheckpoints = {},
         .parentBodyIndex = 1
     });
 }
 
-void Scene::initializeNBodyState() {
-    bodyPositionsKm.assign(bodies.size(), glm::dvec3(0.0));
-    bodyVelocitiesKmPerSec.assign(bodies.size(), glm::dvec3(0.0));
+void Scene::initializePhysicsState() {
+    bodyHeliocentricPositionsKm.assign(bodies.size(), glm::dvec3(0.0));
+    bodyHeliocentricVelocitiesKmPerSec.assign(bodies.size(), glm::dvec3(0.0));
 
-    for (std::size_t index = 0; index < bodies.size(); ++index) {
-        const CelestialBody& body = bodies[index];
+    std::function<std::pair<glm::dvec3, glm::dvec3>(std::size_t, double)> evaluateStateAtJulianDay =
+        [this, &evaluateStateAtJulianDay](std::size_t bodyIndex, double julianDay) -> std::pair<glm::dvec3, glm::dvec3> {
+        const CelestialBody& body = bodies[bodyIndex];
 
-        if (body.name == "Sun") {
-            bodyPositionsKm[index] = glm::dvec3(0.0, 0.0, 0.0);
-            bodyVelocitiesKmPerSec[index] = glm::dvec3(0.0, 0.0, 0.0);
-            continue;
+        glm::dvec3 positionKm(0.0);
+        glm::dvec3 velocityKmPerSec(0.0);
+        if (body.orbitalElementsJ2000.has_value()) {
+            const auto [relativePositionKm, relativeVelocityKmPerSec] = orbitalStateFromElements(body.orbitalElementsJ2000.value(), julianDay);
+            positionKm = relativePositionKm;
+            velocityKmPerSec = relativeVelocityKmPerSec;
         }
 
-        if (body.name == "Earth") {
-            bodyPositionsKm[index] = glm::dvec3(147098290.0, 0.0, 0.0);
-            bodyVelocitiesKmPerSec[index] = glm::dvec3(0.0, 30.29, 0.0);
-            continue;
+        if (body.parentBodyIndex.has_value()) {
+            const auto [parentPositionKm, parentVelocityKmPerSec] = evaluateStateAtJulianDay(body.parentBodyIndex.value(), julianDay);
+            positionKm += parentPositionKm;
+            velocityKmPerSec += parentVelocityKmPerSec;
         }
 
-        if (body.name == "Moon") {
-            const std::size_t earthIndex = 1;
-            bodyPositionsKm[index] = bodyPositionsKm[earthIndex] + glm::dvec3(384400.0, 0.0, 0.0);
-            bodyVelocitiesKmPerSec[index] = bodyVelocitiesKmPerSec[earthIndex] + glm::dvec3(0.0, 1.022, 0.0);
-            continue;
+        return {positionKm, velocityKmPerSec};
+    };
+
+    const double initialJulianDay = currentJulianDay();
+    for (std::size_t bodyIndex = 0; bodyIndex < bodies.size(); ++bodyIndex) {
+        auto [positionKm, velocityKmPerSec] = evaluateStateAtJulianDay(bodyIndex, initialJulianDay);
+        bodyHeliocentricPositionsKm[bodyIndex] = positionKm;
+        bodyHeliocentricVelocitiesKmPerSec[bodyIndex] = velocityKmPerSec;
+    }
+
+    double totalMassKg = 0.0;
+    glm::dvec3 weightedPositionSum(0.0);
+    glm::dvec3 weightedVelocitySum(0.0);
+    for (std::size_t bodyIndex = 0; bodyIndex < bodies.size(); ++bodyIndex) {
+        const double massKg = bodies[bodyIndex].massKg;
+        totalMassKg += massKg;
+        weightedPositionSum += bodyHeliocentricPositionsKm[bodyIndex] * massKg;
+        weightedVelocitySum += bodyHeliocentricVelocitiesKmPerSec[bodyIndex] * massKg;
+    }
+
+    if (totalMassKg > 0.0) {
+        const glm::dvec3 barycenterPositionKm = weightedPositionSum / totalMassKg;
+        const glm::dvec3 barycenterVelocityKmPerSec = weightedVelocitySum / totalMassKg;
+        for (std::size_t bodyIndex = 0; bodyIndex < bodies.size(); ++bodyIndex) {
+            bodyHeliocentricPositionsKm[bodyIndex] -= barycenterPositionKm;
+            bodyHeliocentricVelocitiesKmPerSec[bodyIndex] -= barycenterVelocityKmPerSec;
         }
+    }
+
+    constexpr double kReferenceJulianDay2025 = 2460676.5;
+    for (std::size_t bodyIndex = 0; bodyIndex < bodies.size(); ++bodyIndex) {
+        CelestialBody& body = bodies[bodyIndex];
+        body.referenceCheckpoints.clear();
+
+        const auto [referenceJ2000PositionKm, _referenceJ2000Velocity] = evaluateStateAtJulianDay(bodyIndex, J2000_JULIAN_DAY);
+        body.referenceCheckpoints.push_back(EphemerisReferenceCheckpoint{
+            .julianDay = J2000_JULIAN_DAY,
+            .heliocentricPositionKm = referenceJ2000PositionKm
+        });
+
+        const auto [reference2025PositionKm, _reference2025Velocity] = evaluateStateAtJulianDay(bodyIndex, kReferenceJulianDay2025);
+        body.referenceCheckpoints.push_back(EphemerisReferenceCheckpoint{
+            .julianDay = kReferenceJulianDay2025,
+            .heliocentricPositionKm = reference2025PositionKm
+        });
     }
 }
 
 std::vector<glm::dvec3> Scene::computeAccelerations(const std::vector<glm::dvec3>& positionsKm) const {
-    std::vector<glm::dvec3> accelerations(bodies.size(), glm::dvec3(0.0));
+    std::vector<glm::dvec3> accelerations(positionsKm.size(), glm::dvec3(0.0));
 
-    for (std::size_t bodyIndex = 0; bodyIndex < bodies.size(); ++bodyIndex) {
-        for (std::size_t otherIndex = 0; otherIndex < bodies.size(); ++otherIndex) {
+    for (std::size_t bodyIndex = 0; bodyIndex < positionsKm.size(); ++bodyIndex) {
+        for (std::size_t otherIndex = 0; otherIndex < positionsKm.size(); ++otherIndex) {
             if (bodyIndex == otherIndex) {
                 continue;
             }
 
-            const glm::dvec3 displacementKm = positionsKm[otherIndex] - positionsKm[bodyIndex];
-            const double distanceSquaredKm = glm::dot(displacementKm, displacementKm);
+            const glm::dvec3 deltaKm = positionsKm[otherIndex] - positionsKm[bodyIndex];
+            const double distanceSquaredKm = glm::dot(deltaKm, deltaKm);
             if (distanceSquaredKm < 1.0) {
                 continue;
             }
 
             const double distanceKm = std::sqrt(distanceSquaredKm);
-            const glm::dvec3 direction = displacementKm / distanceKm;
-            const double accelerationMagnitude = (G_KM3_PER_KG_S2 * bodies[otherIndex].massKg) / distanceSquaredKm;
-            accelerations[bodyIndex] += direction * accelerationMagnitude;
+            const glm::dvec3 direction = deltaKm / distanceKm;
+            const double accelerationMagnitudeKmPerSec2 = G_KM3_PER_KG_S2 * bodies[otherIndex].massKg / distanceSquaredKm;
+            accelerations[bodyIndex] += direction * accelerationMagnitudeKmPerSec2;
         }
     }
 
@@ -267,35 +416,154 @@ std::vector<glm::dvec3> Scene::computeAccelerations(const std::vector<glm::dvec3
 }
 
 void Scene::stepNBody(double deltaTimeSeconds) {
-    if (bodyPositionsKm.empty() || bodyVelocitiesKmPerSec.empty()) {
+    if (bodyHeliocentricPositionsKm.empty() || bodyHeliocentricVelocitiesKmPerSec.empty()) {
         return;
     }
 
-    const std::vector<glm::dvec3> initialAccelerations = computeAccelerations(bodyPositionsKm);
-
-    std::vector<glm::dvec3> updatedPositions = bodyPositionsKm;
-    for (std::size_t index = 0; index < bodies.size(); ++index) {
-        updatedPositions[index] += bodyVelocitiesKmPerSec[index] * deltaTimeSeconds +
-                                   0.5 * initialAccelerations[index] * deltaTimeSeconds * deltaTimeSeconds;
+    const std::vector<glm::dvec3> a0 = computeAccelerations(bodyHeliocentricPositionsKm);
+    std::vector<glm::dvec3> nextPositions = bodyHeliocentricPositionsKm;
+    for (std::size_t bodyIndex = 0; bodyIndex < bodies.size(); ++bodyIndex) {
+        nextPositions[bodyIndex] += bodyHeliocentricVelocitiesKmPerSec[bodyIndex] * deltaTimeSeconds +
+                                    0.5 * a0[bodyIndex] * deltaTimeSeconds * deltaTimeSeconds;
     }
 
-    const std::vector<glm::dvec3> updatedAccelerations = computeAccelerations(updatedPositions);
-
-    for (std::size_t index = 0; index < bodies.size(); ++index) {
-        bodyVelocitiesKmPerSec[index] += 0.5 * (initialAccelerations[index] + updatedAccelerations[index]) * deltaTimeSeconds;
+    const std::vector<glm::dvec3> a1 = computeAccelerations(nextPositions);
+    for (std::size_t bodyIndex = 0; bodyIndex < bodies.size(); ++bodyIndex) {
+        bodyHeliocentricVelocitiesKmPerSec[bodyIndex] += 0.5 * (a0[bodyIndex] + a1[bodyIndex]) * deltaTimeSeconds;
     }
 
-    bodyPositionsKm = std::move(updatedPositions);
+    bodyHeliocentricPositionsKm = std::move(nextPositions);
+}
+
+std::pair<glm::dvec3, glm::dvec3> Scene::orbitalStateFromElements(const OrbitalElementsJ2000& elements, double julianDay) const {
+    const double daysSinceJ2000 = julianDay - J2000_JULIAN_DAY;
+    const double meanAnomalyRad = glm::radians(elements.meanAnomalyDegAtJ2000 + elements.meanMotionDegPerDay * daysSinceJ2000);
+    const double eccentricAnomalyRad = solveEccentricAnomalyRad(meanAnomalyRad, elements.eccentricity);
+
+    const double cosE = std::cos(eccentricAnomalyRad);
+    const double sinE = std::sin(eccentricAnomalyRad);
+    const double sqrtOneMinusESquared = std::sqrt(1.0 - elements.eccentricity * elements.eccentricity);
+
+    const double orbitalX = elements.semiMajorAxisKm * (cosE - elements.eccentricity);
+    const double orbitalY = elements.semiMajorAxisKm * sqrtOneMinusESquared * sinE;
+
+    const double meanMotionRadPerSec = glm::radians(elements.meanMotionDegPerDay) / REAL_SECONDS_PER_DAY;
+    const double dEdt = meanMotionRadPerSec / std::max(1e-12, (1.0 - elements.eccentricity * cosE));
+    const double orbitalVx = -elements.semiMajorAxisKm * sinE * dEdt;
+    const double orbitalVy = elements.semiMajorAxisKm * sqrtOneMinusESquared * cosE * dEdt;
+
+    const double cosOmega = std::cos(glm::radians(elements.longitudeAscendingNodeDeg));
+    const double sinOmega = std::sin(glm::radians(elements.longitudeAscendingNodeDeg));
+    const double cosI = std::cos(glm::radians(elements.inclinationDeg));
+    const double sinI = std::sin(glm::radians(elements.inclinationDeg));
+    const double cosW = std::cos(glm::radians(elements.argumentPeriapsisDeg));
+    const double sinW = std::sin(glm::radians(elements.argumentPeriapsisDeg));
+
+    const auto rotatePerifocalToInertial = [cosOmega, sinOmega, cosI, sinI, cosW, sinW](double x, double y) {
+        const double xKm =
+            (cosOmega * cosW - sinOmega * sinW * cosI) * x +
+            (-cosOmega * sinW - sinOmega * cosW * cosI) * y;
+        const double yKm =
+            (sinOmega * cosW + cosOmega * sinW * cosI) * x +
+            (-sinOmega * sinW + cosOmega * cosW * cosI) * y;
+        const double zKm =
+            (sinW * sinI) * x +
+            (cosW * sinI) * y;
+        return glm::dvec3(xKm, yKm, zKm);
+    };
+
+    return {
+        rotatePerifocalToInertial(orbitalX, orbitalY),
+        rotatePerifocalToInertial(orbitalVx, orbitalVy)
+    };
+}
+
+glm::dvec3 Scene::heliocentricPositionFromElements(const OrbitalElementsJ2000& elements, double julianDay) const {
+    return orbitalStateFromElements(elements, julianDay).first;
+}
+
+double Scene::solveEccentricAnomalyRad(double meanAnomalyRad, double eccentricity) {
+    double normalizedMeanAnomaly = wrapRadians(meanAnomalyRad);
+    double eccentricAnomaly = normalizedMeanAnomaly;
+
+    for (int iteration = 0; iteration < 10; ++iteration) {
+        const double f = eccentricAnomaly - eccentricity * std::sin(eccentricAnomaly) - normalizedMeanAnomaly;
+        const double fPrime = 1.0 - eccentricity * std::cos(eccentricAnomaly);
+        if (std::abs(fPrime) < 1e-12) {
+            break;
+        }
+
+        const double delta = f / fPrime;
+        eccentricAnomaly -= delta;
+        if (std::abs(delta) < 1e-12) {
+            break;
+        }
+    }
+
+    return eccentricAnomaly;
+}
+
+void Scene::updateValidationReport() {
+    validationEntries.clear();
+
+    if (bodyHeliocentricPositionsKm.size() != bodies.size()) {
+        return;
+    }
+
+    const double julianDay = currentJulianDay();
+    std::function<glm::dvec3(std::size_t)> evaluateAnalyticHeliocentric =
+        [this, julianDay, &evaluateAnalyticHeliocentric](std::size_t bodyIndex) -> glm::dvec3 {
+        const CelestialBody& body = bodies[bodyIndex];
+        glm::dvec3 analyticPositionKm(0.0);
+        if (body.orbitalElementsJ2000.has_value()) {
+            analyticPositionKm = heliocentricPositionFromElements(body.orbitalElementsJ2000.value(), julianDay);
+        }
+
+        if (body.parentBodyIndex.has_value()) {
+            analyticPositionKm += evaluateAnalyticHeliocentric(body.parentBodyIndex.value());
+        }
+
+        return analyticPositionKm;
+    };
+
+    for (std::size_t bodyIndex = 0; bodyIndex < bodies.size(); ++bodyIndex) {
+        const CelestialBody& body = bodies[bodyIndex];
+        const glm::dvec3 analyticPositionKm = evaluateAnalyticHeliocentric(bodyIndex);
+        const double errorKm = glm::length(bodyHeliocentricPositionsKm[bodyIndex] - analyticPositionKm);
+        validationEntries.push_back(EphemerisValidationEntry{
+            .bodyName = body.name,
+            .referenceJulianDay = julianDay,
+            .errorKm = errorKm
+        });
+    }
 }
 
 void Scene::syncObjectsFromPhysics() {
+    if (bodyHeliocentricPositionsKm.empty()) {
+        return;
+    }
+    const uint32_t maxLod = lodMeshSlices.empty() ? 0u : static_cast<uint32_t>(lodMeshSlices.size() - 1);
+
     for (std::size_t index = 0; index < bodies.size(); ++index) {
         GameObject& object = objects[index];
-        object.transform.worldPosition = bodyPositionsKm[index] * METERS_PER_KILOMETER;
+        object.transform.worldPosition = bodyHeliocentricPositionsKm[index] * METERS_PER_KILOMETER;
 
         const double distanceToCamera = glm::length(object.transform.worldPosition - player.worldPosition());
         const double bodyRadiusUnits = std::max(1.0, static_cast<double>(object.transform.scale.x));
-        object.meshSliceIndex = lodForDistance(distanceToCamera, bodyRadiusUnits);
+        const double distanceToRadiusRatio = distanceToCamera / bodyRadiusUnits;
+        object.meshSliceIndex = chooseLodWithHysteresis(distanceToRadiusRatio, object.meshSliceIndex, maxLod);
+    }
+
+    if (currentFollowedBodyIndex.has_value()) {
+        const std::size_t followedIndex = currentFollowedBodyIndex.value();
+        if (followedIndex < objects.size() && player.isOrbitFollowActive()) {
+            player.updateOrbitFollowTarget(objects[followedIndex].transform.worldPosition);
+        } else {
+            currentFollowedBodyIndex.reset();
+            player.cancelOrbitFollow();
+        }
+    } else if (!player.isOrbitFollowActive()) {
+        currentFollowedBodyIndex.reset();
     }
 }
 
@@ -306,7 +574,13 @@ void Scene::updateBodyRotations() {
 
         if (body.rotationPeriodHours > 0.0) {
             const double rotationDegrees = wrapDegrees((elapsedSimulationDays * 24.0 / body.rotationPeriodHours) * 360.0);
-            object.transform.rotationEulerDegrees = glm::vec3(0.0f, 0.0f, static_cast<float>(rotationDegrees));
+            object.transform.rotationEulerDegrees = glm::vec3(
+                static_cast<float>(body.axialTiltDeg),
+                0.0f,
+                static_cast<float>(rotationDegrees)
+            );
+        } else {
+            object.transform.rotationEulerDegrees = glm::vec3(static_cast<float>(body.axialTiltDeg), 0.0f, 0.0f);
         }
     }
 }
@@ -314,16 +588,16 @@ void Scene::updateBodyRotations() {
 uint32_t Scene::lodForDistance(double distanceToCameraUnits, double bodyRadiusUnits) const {
     const double distanceToRadiusRatio = distanceToCameraUnits / std::max(bodyRadiusUnits, 1.0);
 
-    if (distanceToRadiusRatio < 5.0) {
+    if (distanceToRadiusRatio < kLodRatioThresholds[0]) {
         return 0;
     }
-    if (distanceToRadiusRatio < 10.0) {
+    if (distanceToRadiusRatio < kLodRatioThresholds[1]) {
         return 1;
     }
-    if (distanceToRadiusRatio < 22.0) {
+    if (distanceToRadiusRatio < kLodRatioThresholds[2]) {
         return 2;
     }
-    if (distanceToRadiusRatio < 55.0) {
+    if (distanceToRadiusRatio < kLodRatioThresholds[3]) {
         return 3;
     }
     return 4;
@@ -333,6 +607,15 @@ double Scene::wrapDegrees(double angleDegrees) {
     double wrapped = std::fmod(angleDegrees, 360.0);
     if (wrapped < 0.0) {
         wrapped += 360.0;
+    }
+    return wrapped;
+}
+
+double Scene::wrapRadians(double angleRadians) {
+    constexpr double twoPi = glm::two_pi<double>();
+    double wrapped = std::fmod(angleRadians, twoPi);
+    if (wrapped < 0.0) {
+        wrapped += twoPi;
     }
     return wrapped;
 }

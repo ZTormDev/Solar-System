@@ -10,6 +10,7 @@
 #include <array>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <set>
 #include <stdexcept>
 #include <unordered_set>
@@ -26,6 +27,7 @@ void VulkanApp::initWindow() {
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+    glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
 
     window = glfwCreateWindow(WIDTH, HEIGHT, "Solar System Engine MVP", nullptr, nullptr);
     glfwSetWindowUserPointer(window, this);
@@ -657,7 +659,7 @@ void VulkanApp::createGraphicsPipeline() {
     pipelineLayoutInfo.pSetLayouts = &descriptorSetLayout;
 
     VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.offset = 0;
     pushConstantRange.size = sizeof(PushConstants);
     pipelineLayoutInfo.pushConstantRangeCount = 1;
@@ -903,7 +905,7 @@ void VulkanApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
     }
 
     std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = {{0.02f, 0.02f, 0.06f, 1.0f}};
+    clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
     clearValues[1].depthStencil = {1.0f, 0};
 
     VkRenderPassBeginInfo renderPassInfo{};
@@ -943,10 +945,11 @@ void VulkanApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
         PushConstants pushConstants{};
         pushConstants.model = scene.modelMatrixFor(object);
         pushConstants.tint = glm::vec4(object.colorTint, 1.0f);
+        pushConstants.material = glm::vec4(object.name == "Sun" ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
         vkCmdPushConstants(
             commandBuffer,
             pipelineLayout,
-            VK_SHADER_STAGE_VERTEX_BIT,
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
             0,
             sizeof(PushConstants),
             &pushConstants
@@ -1050,11 +1053,101 @@ void VulkanApp::drawFrame() {
     }
 
     ImGui::Text("Simulation Days: %.3f", scene.simulationDays());
+    ImGui::Text("Julian Day: %.5f", scene.currentJulianDay());
 
     ImGui::Separator();
     ImGui::Text("Bodies");
     for (const auto& body : scene.celestialBodies()) {
-        ImGui::BulletText("%s | orbit %.0f km | period %.2f days", body.name.c_str(), body.orbitRadiusKm, body.orbitPeriodDays);
+        if (body.orbitalElementsJ2000.has_value()) {
+            const auto& elements = body.orbitalElementsJ2000.value();
+            ImGui::BulletText(
+                "%s | a %.0f km e %.5f i %.3f Ω %.3f ω %.3f | obliq %.3f",
+                body.name.c_str(),
+                elements.semiMajorAxisKm,
+                elements.eccentricity,
+                elements.inclinationDeg,
+                elements.longitudeAscendingNodeDeg,
+                elements.argumentPeriapsisDeg,
+                body.axialTiltDeg
+            );
+        } else {
+            ImGui::BulletText("%s | fixed heliocentric body | obliq %.3f", body.name.c_str(), body.axialTiltDeg);
+        }
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Teleport Near Body");
+    const auto& renderables = scene.renderables();
+    const auto& bodies = scene.celestialBodies();
+    const std::size_t teleportCount = std::min(renderables.size(), bodies.size());
+    for (std::size_t index = 0; index < teleportCount; ++index) {
+        const auto& object = renderables[index];
+        const auto& body = bodies[index];
+
+        const double bodyRadiusUnits = std::max(1.0, static_cast<double>(object.transform.scale.x));
+        const double desiredDistanceFromSurface = std::max(10000.0, bodyRadiusUnits * 2.5);
+        const double targetDistanceFromCenter = bodyRadiusUnits + desiredDistanceFromSurface;
+
+        glm::dvec3 direction = scene.mainPlayer().worldPosition() - object.transform.worldPosition;
+        const double directionLength = glm::length(direction);
+        if (directionLength <= std::numeric_limits<double>::epsilon()) {
+            direction = glm::dvec3(1.0, 0.0, 0.0);
+        } else {
+            direction /= directionLength;
+        }
+
+        const std::string buttonLabel = "Near " + body.name;
+        if (ImGui::Button(buttonLabel.c_str())) {
+            const glm::dvec3 destination = object.transform.worldPosition + direction * targetDistanceFromCenter;
+            scene.mainPlayer().teleportToWorldPosition(destination);
+        }
+
+        if ((index % 3) != 2 && (index + 1) < teleportCount) {
+            ImGui::SameLine();
+        }
+    }
+
+    ImGui::Separator();
+    ImGui::Text("View Body (Orbit Follow)");
+    if (scene.followedBodyIndex().has_value() && scene.followedBodyIndex().value() < bodies.size()) {
+        ImGui::Text("Follow Status: ACTIVE (%s)", bodies[scene.followedBodyIndex().value()].name.c_str());
+    } else {
+        ImGui::Text("Follow Status: FREE CAMERA");
+    }
+    for (std::size_t index = 0; index < teleportCount; ++index) {
+        const auto& body = bodies[index];
+        const bool isFollowed = scene.followedBodyIndex().has_value() && scene.followedBodyIndex().value() == index;
+
+        std::string buttonLabel = "View " + body.name;
+        if (isFollowed) {
+            buttonLabel += " [Following]";
+        }
+
+        if (ImGui::Button(buttonLabel.c_str())) {
+            scene.followBody(index);
+        }
+
+        if ((index % 2) == 0 && (index + 1) < teleportCount) {
+            ImGui::SameLine();
+        }
+    }
+
+    if (scene.followedBodyIndex().has_value()) {
+        if (ImGui::Button("Stop View")) {
+            scene.clearFollowBody();
+        }
+        ImGui::Text("View mode active: mouse orbits, wheel zooms, WASD/QE cancels to free camera.");
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Validation (N-body vs ephemeris at current JD)");
+    for (const auto& validation : scene.ephemerisValidationEntries()) {
+        ImGui::BulletText(
+            "%s @ JD %.1f | error %.6f km",
+            validation.bodyName.c_str(),
+            validation.referenceJulianDay,
+            validation.errorKm
+        );
     }
     ImGui::End();
 
@@ -1124,6 +1217,8 @@ void VulkanApp::updateUniformBuffer(uint32_t currentImage) {
     ubo.proj = scene.projectionMatrix(
         static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height)
     );
+    const glm::dvec3 sunRelativeToCamera = scene.sunWorldPosition() - scene.mainPlayer().worldPosition();
+    ubo.sunWorldPosition = glm::vec4(sunRelativeToCamera, 1.0f);
 
     std::memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 }

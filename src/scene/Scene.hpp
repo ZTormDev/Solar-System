@@ -18,6 +18,12 @@ public:
         int32_t vertexOffset = 0;
     };
 
+    struct EphemerisValidationEntry {
+        std::string bodyName;
+        double referenceJulianDay = 2451545.0;
+        double errorKm = 0.0;
+    };
+
     Scene();
 
     GameObject& createGameObject(const std::string& name);
@@ -48,36 +54,50 @@ public:
     bool isPaused() const;
     void setPaused(bool value);
     double simulationDays() const;
+    double currentJulianDay() const;
 
     const std::vector<CelestialBody>& celestialBodies() const;
+    const std::vector<EphemerisValidationEntry>& ephemerisValidationEntries() const;
+    glm::dvec3 sunWorldPosition() const;
+    void followBody(std::size_t bodyIndex);
+    void clearFollowBody();
+    std::optional<std::size_t> followedBodyIndex() const;
 
 private:
     void buildLodSphereMeshes();
     void initializeSolarMvpBodies();
-    void initializeNBodyState();
+    void initializePhysicsState();
     void stepNBody(double deltaTimeSeconds);
     std::vector<glm::dvec3> computeAccelerations(const std::vector<glm::dvec3>& positionsKm) const;
     void syncObjectsFromPhysics();
     void updateBodyRotations();
+    void updateValidationReport();
+    std::pair<glm::dvec3, glm::dvec3> orbitalStateFromElements(const OrbitalElementsJ2000& elements, double julianDay) const;
+    glm::dvec3 heliocentricPositionFromElements(const OrbitalElementsJ2000& elements, double julianDay) const;
+    static double solveEccentricAnomalyRad(double meanAnomalyRad, double eccentricity);
     uint32_t lodForDistance(double distanceToCameraUnits, double bodyRadiusUnits) const;
     static double wrapDegrees(double angleDegrees);
+    static double wrapRadians(double angleRadians);
 
     float elapsedSeconds = 0.0f;
     double elapsedSimulationDays = 0.0;
     float simulationTimeScale = 6000.0f;
     bool paused = false;
 
+    static constexpr double J2000_JULIAN_DAY = 2451545.0;
     static constexpr double REAL_SECONDS_PER_DAY = 86400.0;
     static constexpr double METERS_PER_KILOMETER = 1000.0;
     static constexpr double G_KM3_PER_KG_S2 = 6.67430e-20;
-    static constexpr double MAX_PHYSICS_SUBSTEP_SECONDS = 600.0;
+    static constexpr double MAX_PHYSICS_SUBSTEP_SECONDS = 300.0;
 
     std::vector<CelestialBody> bodies;
     std::vector<MeshSlice> lodMeshSlices;
     std::vector<Vertex> sceneMeshVertices;
     std::vector<uint16_t> sceneMeshIndices;
-    std::vector<glm::dvec3> bodyPositionsKm;
-    std::vector<glm::dvec3> bodyVelocitiesKmPerSec;
+    std::vector<glm::dvec3> bodyHeliocentricPositionsKm;
+    std::vector<glm::dvec3> bodyHeliocentricVelocitiesKmPerSec;
+    std::vector<EphemerisValidationEntry> validationEntries;
+    std::optional<std::size_t> currentFollowedBodyIndex;
 
     Player player;
     std::vector<GameObject> objects;

@@ -24,11 +24,13 @@ private:
     struct UniformBufferObject {
         glm::mat4 view;
         glm::mat4 proj;
+        glm::vec4 sunWorldPosition;
     };
 
     struct PushConstants {
         glm::mat4 model;
         glm::vec4 tint;
+        glm::vec4 material;
     };
 
     struct QueueFamilyIndices {
