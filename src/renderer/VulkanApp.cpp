@@ -936,7 +936,9 @@ void VulkanApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
         nullptr
     );
 
-    for (const auto& object : scene.renderables()) {
+    const auto& renderables = scene.renderables();
+    for (std::size_t objectIndex = 0; objectIndex < renderables.size(); ++objectIndex) {
+        const auto& object = renderables[objectIndex];
         if (!object.isActive) {
             continue;
         }
@@ -946,6 +948,7 @@ void VulkanApp::recordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imag
         pushConstants.model = scene.modelMatrixFor(object);
         pushConstants.tint = glm::vec4(object.colorTint, 1.0f);
         pushConstants.material = glm::vec4(object.name == "Sun" ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f);
+        pushConstants.objectInfo = glm::vec4(static_cast<float>(objectIndex), 0.0f, 0.0f, 0.0f);
         vkCmdPushConstants(
             commandBuffer,
             pipelineLayout,
@@ -1219,6 +1222,32 @@ void VulkanApp::updateUniformBuffer(uint32_t currentImage) {
     );
     const glm::dvec3 sunRelativeToCamera = scene.sunWorldPosition() - scene.mainPlayer().worldPosition();
     ubo.sunWorldPosition = glm::vec4(sunRelativeToCamera, 1.0f);
+
+    const auto& renderables = scene.renderables();
+    const auto& bodies = scene.celestialBodies();
+    const std::size_t bodyCount = std::min<std::size_t>(renderables.size(), bodies.size());
+    const std::size_t cappedBodyCount = std::min<std::size_t>(bodyCount, MAX_SHADOW_BODIES);
+
+    for (std::size_t index = 0; index < MAX_SHADOW_BODIES; ++index) {
+        ubo.shadowBodySpheres[index] = glm::vec4(0.0f);
+    }
+
+    int sunIndex = -1;
+    for (std::size_t index = 0; index < cappedBodyCount; ++index) {
+        const glm::dvec3 relativePosition = renderables[index].transform.worldPosition - scene.mainPlayer().worldPosition();
+        const float radiusMeters = std::max(1.0f, renderables[index].transform.scale.x);
+        ubo.shadowBodySpheres[index] = glm::vec4(relativePosition, radiusMeters);
+        if (bodies[index].name == "Sun") {
+            sunIndex = static_cast<int>(index);
+        }
+    }
+
+    ubo.shadowMeta = glm::vec4(
+        static_cast<float>(cappedBodyCount),
+        static_cast<float>(sunIndex),
+        0.0f,
+        0.0f
+    );
 
     std::memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 }
